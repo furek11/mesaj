@@ -4,12 +4,11 @@ import {
     doc, setDoc, updateDoc, where, getDocs
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-// === EMAILJS CONFIG (Buradaki Değerleri Kendi Bilgilerinle Doldur) ===
+// === EMAILJS CONFIG ===
 const EMAILJS_PUBLIC_KEY = "5TpnpoaEEVUg3ekL1";
 const EMAILJS_SERVICE_ID = "service_45dlxnd";
 const EMAILJS_TEMPLATE_ID = "template_lfnx7dm";
 
-// EmailJS Başlatma
 if (typeof emailjs !== "undefined" && EMAILJS_PUBLIC_KEY !== "YOUR_PUBLIC_KEY") {
     emailjs.init(EMAILJS_PUBLIC_KEY);
 }
@@ -61,9 +60,7 @@ fullscreenBtn.addEventListener("click", () => {
     }
 });
 
-// === EMAIL NOTİFİKASYON MOTORU ===
 async function sendEmailNotification(messageText, contentType = "metin") {
-    // Karşı taraf çevrimiçiyse e-posta atarak rahatsız etme, sadece çevrimdışıysa at
     if (isPartnerOnline) return;
     if (EMAILJS_PUBLIC_KEY === "YOUR_PUBLIC_KEY") return;
 
@@ -76,10 +73,14 @@ async function sendEmailNotification(messageText, contentType = "metin") {
 
     try {
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams);
-        console.log("EmailJS: Bildirim e-postası başarıyla gönderildi!");
     } catch (error) {
         console.error("EmailJS Hatası:", error);
     }
+}
+
+// Güvenli Kimlik Formatlayıcı (Firebase Doküman Yolları İçin Boşlukları Temizler)
+function getDocId(name) {
+    return name.replace(/\s+/g, '_');
 }
 
 window.selectUser = function(user) {
@@ -102,7 +103,12 @@ window.selectUser = function(user) {
     }
 
     setUserPresence(true);
+    
+    // Uygulama kapatılırken veya sekmeler arası geçişte çevrimdışı yap
     window.addEventListener("beforeunload", () => { setUserPresence(false); });
+    document.addEventListener("visibilitychange", () => {
+        setUserPresence(document.visibilityState === 'visible');
+    });
 
     listenForMessages();
     listenPartnerPresence();
@@ -134,14 +140,14 @@ window.closeChatArea = function() {
 async function setUserPresence(isOnline) {
     if (!currentUser) return;
     try {
-        await setDoc(doc(db, "presence", currentUser), {
+        await setDoc(doc(db, "presence", getDocId(currentUser)), {
             isOnline: isOnline, isTyping: false, lastSeen: serverTimestamp()
         }, { merge: true });
     } catch (e) { console.error(e); }
 }
 
 function listenPartnerPresence() {
-    onSnapshot(doc(db, "presence", chatPartner), (docSnap) => {
+    onSnapshot(doc(db, "presence", getDocId(chatPartner)), (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data();
             isPartnerOnline = data.isOnline;
@@ -171,11 +177,12 @@ function listenPartnerPresence() {
 
 function setupTypingListener() {
     messageInput.addEventListener("input", () => {
-        updateDoc(doc(db, "presence", currentUser), { isTyping: true });
+        if (!currentUser) return;
+        updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: true });
         clearTimeout(typingTimeout);
         typingTimeout = setTimeout(() => {
-            updateDoc(doc(db, "presence", currentUser), { isTyping: false });
-        }, 2000);
+            updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false });
+        }, 1500);
     });
 }
 
@@ -190,7 +197,7 @@ async function markIncomingMessagesAsRead() {
 
 async function sendCustomMessage(payload, type = "text") {
     try {
-        updateDoc(doc(db, "presence", currentUser), { isTyping: false });
+        if(currentUser) updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false });
         const initialStatus = isPartnerOnline ? "delivered" : "sent";
         await addDoc(collection(db, "messages"), {
             sender: currentUser, receiver: chatPartner,
@@ -199,7 +206,6 @@ async function sendCustomMessage(payload, type = "text") {
             messageType: type, timestamp: serverTimestamp(), status: initialStatus
         });
         
-        // E-posta bildirimini tetikle
         sendEmailNotification(payload, type === "text" ? "metin" : type === "image" ? "fotoğraf" : "ses kaydı");
     } catch (e) { console.error(e); }
 }
@@ -305,6 +311,7 @@ window.addEventListener("resize", () => {
     }
 });
 
+// Klavye açıldığında input alanını görünür alana taşır ve mesajları kaydırır
 if (messageInput) {
     messageInput.addEventListener("focus", () => {
         setTimeout(() => {
