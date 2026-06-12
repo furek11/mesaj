@@ -2,14 +2,13 @@
 <html lang="tr" class="">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Anlık Mesajlaşma</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = { darkMode: 'class' }
     </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
 </head>
 <body class="bg-gray-100 dark:bg-zinc-900 transition-colors duration-200 antialiased overflow-hidden h-screen w-screen flex flex-col justify-center items-center font-sans">
 
@@ -37,14 +36,14 @@
                     <div class="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center text-white font-bold"><i class="fa-solid fa-circle-user text-xl"></i></div>
                     <span id="current-user-name" class="font-bold text-gray-800 dark:text-zinc-100 text-sm">Yükleniyor...</span>
                 </div>
-                <button id="dark-mode-toggle" class="w-9 h-9 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300">
+                <button id="dark-mode-toggle" class="w-9 h-9 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300|">
                     <i class="fa-solid fa-moon dark:hidden"></i>
                     <i class="fa-solid fa-sun hidden dark:block text-amber-400"></i>
                 </button>
             </div>
             
             <div class="flex-1 overflow-y-auto p-2">
-                <div onclick="window.applyMobileView('chat')" class="flex items-center gap-3 p-3 bg-white dark:bg-zinc-700/40 rounded-xl border cursor-pointer hover:bg-white/80 transition">
+                <div onclick="window.openChatArea()" class="flex items-center gap-3 p-3 bg-white dark:bg-zinc-700/40 rounded-xl border border-gray-100 dark:border-zinc-700/30 cursor-pointer hover:bg-gray-100/50 transition">
                     <div class="w-11 h-11 rounded-xl bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 font-bold flex items-center justify-center" id="avatar-placeholder">-</div>
                     <div class="flex-1 min-w-0">
                         <h3 id="chat-partner-name" class="font-semibold text-gray-800 dark:text-zinc-200 text-sm truncate">Yükleniyor</h3>
@@ -59,8 +58,8 @@
 
             <div class="h-16 px-4 bg-white dark:bg-zinc-800 border-b border-gray-100 dark:border-zinc-700/50 flex items-center justify-between relative z-10 shrink-0">
                 <div class="flex items-center gap-3 min-w-0">
-                    <button onclick="window.backToSidebar()" class="md:hidden w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-zinc-700 text-gray-600 dark:text-zinc-300">
-                        <i class="fa-solid fa-arrow-left text-lg"></i>
+                    <button onclick="window.closeChatArea()" class="md:hidden w-9 h-9 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 mr-1">
+                        <i class="fa-solid fa-arrow-left text-base"></i>
                     </button>
                     <div class="relative">
                         <div class="w-10 h-10 rounded-xl bg-emerald-500 text-white font-bold flex items-center justify-center"><i class="fa-solid fa-comments"></i></div>
@@ -88,6 +87,6 @@
         </div>
     </div>
 
-    <script type="module" src="app.js?v=1.0.5"></script>
+    <script type="module" src="app.js?v=2.0.1"></script>
 </body>
 </html>

@@ -30,7 +30,7 @@ const partnerStatusHeader = document.getElementById("partner-status-header");
 const statusIndicatorDot = document.getElementById("status-indicator-dot");
 const avatarPlaceholder = document.getElementById("avatar-placeholder");
 
-// Garantili ID Seçiciler
+// Ekran Alanları
 const sidebarArea = document.getElementById("sidebar-area");
 const chatArea = document.getElementById("chat-area");
 
@@ -49,7 +49,10 @@ window.selectUser = function(user) {
     loginScreen.classList.add("hidden");
     chatScreen.classList.remove("hidden");
 
-    window.applyMobileView("chat");
+    // Masaüstünde her şey açık başlar, mobilde ise ilk başta listeyi gösteririz
+    if (window.innerWidth <= 768) {
+        window.closeChatArea();
+    }
 
     setUserPresence(true);
     window.addEventListener("beforeunload", () => { setUserPresence(false); });
@@ -60,24 +63,26 @@ window.selectUser = function(user) {
     markIncomingMessagesAsRead();
 };
 
-window.applyMobileView = function(view = "chat") {
+// MOBİL EKRAN GEÇİŞ FONKSİYONLARI
+window.openChatArea = function() {
     if (window.innerWidth <= 768) {
-        if (view === "chat") {
-            if (sidebarArea) { sidebarArea.classList.add("hidden"); sidebarArea.classList.remove("block", "w-full"); }
-            if (chatArea) { chatArea.classList.remove("hidden"); chatArea.classList.add("flex", "w-full", "h-full"); }
-        } else {
-            if (sidebarArea) { sidebarArea.classList.remove("hidden"); sidebarArea.classList.add("block", "w-full"); }
-            if (chatArea) { chatArea.classList.add("hidden"); chatArea.classList.remove("flex", "w-full", "h-full"); }
+        if (sidebarArea) sidebarArea.classList.add("hidden");
+        if (chatArea) {
+            chatArea.classList.remove("hidden", "md:flex");
+            chatArea.classList.add("flex", "w-full", "h-full");
         }
-    } else {
-        // Masaüstü modu sıfırlama
-        if (sidebarArea) { sidebarArea.classList.remove("hidden", "block", "w-full"); sidebarArea.classList.add("w-80"); }
-        if (chatArea) { chatArea.classList.remove("hidden", "w-full", "h-full"); chatArea.classList.add("flex", "flex-1"); }
     }
+    setTimeout(() => { if(messagesContainer) messagesContainer.scrollTop = messagesContainer.scrollHeight; }, 100);
 };
 
-window.backToSidebar = function() {
-    window.applyMobileView("sidebar");
+window.closeChatArea = function() {
+    if (window.innerWidth <= 768) {
+        if (sidebarArea) sidebarArea.classList.remove("hidden");
+        if (chatArea) {
+            chatArea.classList.add("hidden", "md:flex");
+            chatArea.classList.remove("flex", "w-full", "h-full");
+        }
+    }
 };
 
 async function setUserPresence(isOnline) {
@@ -98,18 +103,21 @@ function listenPartnerPresence() {
             if (data.isTyping) {
                 if(partnerStatusSidebar) partnerStatusSidebar.textContent = "Yazıyor...";
                 if(partnerStatusHeader) partnerStatusHeader.textContent = "yazıyor...";
+                if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full animate-pulse";
             } else if (data.isOnline) {
                 if(partnerStatusSidebar) partnerStatusSidebar.textContent = "Çevrimiçi";
                 if(partnerStatusHeader) partnerStatusHeader.textContent = "Çevrimiçi";
+                if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full";
                 markIncomingMessagesAsRead();
             } else {
-                let lastSeenText = "Son görülme bilinmiyor";
+                let lastSeenText = "çevrimdışı";
                 if (data.lastSeen) {
                     const date = data.lastSeen.toDate();
                     lastSeenText = `Son görülme ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
                 }
                 if(partnerStatusSidebar) partnerStatusSidebar.textContent = lastSeenText;
                 if(partnerStatusHeader) partnerStatusHeader.textContent = lastSeenText;
+                if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-gray-400 rounded-full";
             }
         }
     });
@@ -157,14 +165,6 @@ messageInput.addEventListener("keypress", (e) => {
         if (text) { sendCustomMessage(text, "text"); messageInput.value = ""; }
     }
 });
-
-window.deleteMessageForEveryone = async function(messageId) {
-    try {
-        await updateDoc(doc(db, "messages", messageId), {
-            message: "Bu mesaj silindi", fileData: "", messageType: "deleted", status: "read"
-        });
-    } catch (e) { console.error(e); }
-};
 
 fileInput.addEventListener("change", (e) => {
     const file = e.target.files[0];
@@ -223,18 +223,24 @@ function listenForMessages() {
             }
 
             const isMe = data.sender === currentUser;
-            let messageBg = isMe ? "bg-[#d9fdd3] dark:bg-emerald-900/40 text-gray-800 self-end" : "bg-white dark:bg-zinc-700 text-gray-800 self-start";
+            let messageBg = isMe ? "bg-[#d9fdd3] dark:bg-emerald-900/40 text-gray-800 dark:text-gray-100 self-end rounded-l-xl rounded-br-xl" : "bg-white dark:bg-zinc-700 text-gray-800 dark:text-gray-100 self-start rounded-r-xl rounded-bl-xl";
             
             let contentBody = "";
-            if (data.messageType === "image") contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[150px] object-cover">`;
+            if (data.messageType === "image") contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] object-cover" onclick="window.open(this.src)">`;
             else if (data.messageType === "audio") contentBody = `<audio src="${data.fileData}" controls class="w-[180px] h-8"></audio>`;
-            else if (data.messageType === "deleted") contentBody = `<p class="text-gray-400 italic">Bu mesaj silindi</p>`;
-            else contentBody = `<p class="break-words">${data.message}</p>`;
+            else contentBody = `<p class="break-words max-w-[65vw] md:max-w-md">${data.message}</p>`;
+
+            let statusTick = "";
+            if (isMe) {
+                if (data.status === "read") statusTick = `<span class="text-sky-500 ml-1">✓✓</span>`;
+                else if (data.status === "delivered") statusTick = `<span class="text-gray-400 ml-1">✓✓</span>`;
+                else statusTick = `<span class="text-gray-400 ml-1">✓</span>`;
+            }
 
             const messageHtml = `
-                <div class="flex flex-col ${isMe ? 'self-end' : 'self-start'} max-w-[75vw] p-2.5 rounded-xl shadow-sm ${messageBg}">
+                <div class="flex flex-col ${isMe ? 'self-end' : 'self-start'} p-2 px-3 shadow-sm ${messageBg} relative group">
                     ${contentBody}
-                    <span class="text-[9px] text-gray-400 text-right mt-1 block">${timeString}</span>
+                    <span class="text-[9px] text-gray-400 dark:text-gray-400/80 text-right mt-1 block select-none">${timeString} ${statusTick}</span>
                 </div>
             `;
             messagesContainer.insertAdjacentHTML("beforeend", messageHtml);
@@ -243,4 +249,10 @@ function listenForMessages() {
     });
 }
 
-window.addEventListener("resize", () => { if (currentUser) window.applyMobileView("chat"); });
+// Ekran genişliği masaüstüne dönerse yerleşimi koru
+window.addEventListener("resize", () => {
+    if (currentUser && window.innerWidth > 768) {
+        if (sidebarArea) sidebarArea.classList.remove("hidden");
+        if (chatArea) { chatArea.classList.remove("hidden"); chatArea.classList.add("flex"); }
+    }
+});
