@@ -40,28 +40,37 @@ const partnerStatusHeader = document.getElementById("partner-status-header");
 const statusIndicatorDot = document.getElementById("status-indicator-dot");
 const avatarPlaceholder = document.getElementById("avatar-placeholder");
 
+// Mobil İçin Ekstra Dinamik Eleman Kontrolleri
+const sidebarArea = document.querySelector(".w-80, [class*='w-80'], .sidebar"); // Sol menü alanı
+const chatArea = document.querySelector(".flex-1, [class*='flex-1'], .chat-area"); // Sağ mesajlaşma alanı
+
 // 1. Karanlık Mod Mantığı
 darkModeToggle.addEventListener("click", () => {
     document.documentElement.classList.toggle("dark");
     const chatBg = document.getElementById("chat-bg-layer");
-    if(document.documentElement.classList.contains("dark")) {
-        chatBg.style.backgroundBlendMode = "multiply";
-    } else {
-        chatBg.style.backgroundBlendMode = "overlay";
+    if(chatBg) {
+        if(document.documentElement.classList.contains("dark")) {
+            chatBg.style.backgroundBlendMode = "multiply";
+        } else {
+            chatBg.style.backgroundBlendMode = "overlay";
+        }
     }
 });
 
-// 2. Giriş Yapma ve Canlı Durum Yönetimi (Global Scope Bağlantısı Garantiye Alındı)
+// 2. Giriş Yapma ve Canlı Durum Yönetimi
 window.selectUser = function(user) {
     currentUser = user;
     chatPartner = (currentUser === "Kullanıcı 1") ? "Kullanıcı 2" : "Kullanıcı 1";
 
     currentUserNameEl.textContent = currentUser;
     chatPartnerNameEl.textContent = chatPartner;
-    avatarPlaceholder.textContent = chatPartner.charAt(chatPartner.length - 1);
+    if(avatarPlaceholder) avatarPlaceholder.textContent = chatPartner.charAt(chatPartner.length - 1);
 
     loginScreen.classList.add("hidden");
     chatScreen.classList.remove("hidden");
+
+    // Mobil Görünüm Optimizasyonu: Giriş yapıldığında doğrudan mesaj alanını göster, sol menüyü mobilde gizle
+    applyMobileView("chat");
 
     setUserPresence(true);
     window.addEventListener("beforeunload", () => { setUserPresence(false); });
@@ -70,6 +79,30 @@ window.selectUser = function(user) {
     listenPartnerPresence();
     setupTypingListener();
     markIncomingMessagesAsRead();
+};
+
+// Mobilde ekran geçişlerini yöneten yardımcı fonksiyon
+function applyMobileView(view = "chat") {
+    if (window.innerWidth <= 768) {
+        if (view === "chat") {
+            if (sidebarArea) sidebarArea.classList.add("hidden");
+            if (chatArea) {
+                chatArea.classList.remove("hidden");
+                chatArea.classList.add("flex", "w-full", "h-full");
+            }
+        } else {
+            if (sidebarArea) {
+                sidebarArea.classList.remove("hidden");
+                sidebarArea.classList.add("w-full", "h-full");
+            }
+            if (chatArea) chatArea.classList.add("hidden");
+        }
+    }
+}
+
+// Mobilde sohbetten çıkıp listeye dönmek için bir geri butonu eklemek istersen global fonksiyon
+window.backToSidebar = function() {
+    applyMobileView("sidebar");
 };
 
 async function setUserPresence(isOnline) {
@@ -88,17 +121,25 @@ function listenPartnerPresence() {
             isPartnerOnline = data.isOnline;
             
             if (data.isTyping) {
-                partnerStatusSidebar.textContent = "Yazıyor...";
-                partnerStatusSidebar.className = "text-xs text-emerald-600 dark:text-emerald-400 font-bold animate-pulse mt-0.5";
-                partnerStatusHeader.textContent = "yazıyor...";
-                partnerStatusHeader.className = "text-xs text-emerald-600 dark:text-emerald-400 font-bold animate-pulse mt-0.5";
-                statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full shadow-md shadow-emerald-200";
+                if(partnerStatusSidebar) {
+                    partnerStatusSidebar.textContent = "Yazıyor...";
+                    partnerStatusSidebar.className = "text-xs text-emerald-600 dark:text-emerald-400 font-bold animate-pulse mt-0.5";
+                }
+                if(partnerStatusHeader) {
+                    partnerStatusHeader.textContent = "yazıyor...";
+                    partnerStatusHeader.className = "text-xs text-emerald-600 dark:text-emerald-400 font-bold animate-pulse mt-0.5";
+                }
+                if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full shadow-md shadow-emerald-200";
             } else if (data.isOnline) {
-                partnerStatusSidebar.textContent = "Çevrimiçi";
-                partnerStatusSidebar.className = "text-xs text-emerald-500 font-semibold mt-0.5";
-                partnerStatusHeader.textContent = "Çevrimiçi";
-                partnerStatusHeader.className = "text-xs text-emerald-500 font-medium mt-0.5";
-                statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full shadow-md shadow-emerald-200";
+                if(partnerStatusSidebar) {
+                    partnerStatusSidebar.textContent = "Çevrimiçi";
+                    partnerStatusSidebar.className = "text-xs text-emerald-500 font-semibold mt-0.5";
+                }
+                if(partnerStatusHeader) {
+                    partnerStatusHeader.textContent = "Çevrimiçi";
+                    partnerStatusHeader.className = "text-xs text-emerald-500 font-medium mt-0.5";
+                }
+                if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full shadow-md shadow-emerald-200";
                 markIncomingMessagesAsRead();
             } else {
                 let lastSeenText = "Son görülme bilinmiyor";
@@ -106,11 +147,15 @@ function listenPartnerPresence() {
                     const date = data.lastSeen.toDate();
                     lastSeenText = `Son görülme bugün ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
                 }
-                partnerStatusSidebar.textContent = lastSeenText;
-                partnerStatusSidebar.className = "text-xs text-gray-400 truncate mt-0.5";
-                partnerStatusHeader.textContent = lastSeenText;
-                partnerStatusHeader.className = "text-xs text-gray-400 font-medium mt-0.5";
-                statusIndicatorDot.className = "w-3 h-3 bg-gray-400 rounded-full";
+                if(partnerStatusSidebar) {
+                    partnerStatusSidebar.textContent = lastSeenText;
+                    partnerStatusSidebar.className = "text-xs text-gray-400 truncate mt-0.5";
+                }
+                if(partnerStatusHeader) {
+                    partnerStatusHeader.textContent = lastSeenText;
+                    partnerStatusHeader.className = "text-xs text-gray-400 font-medium mt-0.5";
+                }
+                if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-gray-400 rounded-full";
             }
         }
     });
@@ -172,7 +217,6 @@ messageInput.addEventListener("keypress", (e) => {
     }
 });
 
-// Herkes için silme fonksiyonu global scope'a bağlandı
 window.deleteMessageForEveryone = async function(messageId) {
     try {
         await updateDoc(doc(db, "messages", messageId), {
@@ -184,7 +228,7 @@ window.deleteMessageForEveryone = async function(messageId) {
     } catch (e) { console.error(e); }
 };
 
-// 3. Gelişmiş Fotoğraf Sıkıştırma (PNG ve Boyut Çözümü)
+// 3. Gelişmiş Fotoğraf Sıkıştırma
 fileInput.addEventListener("change", (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -195,7 +239,7 @@ fileInput.addEventListener("change", (e) => {
             const img = new Image();
             img.onload = function() {
                 const canvas = document.createElement("canvas");
-                const MAX_WIDTH = 800;
+                const MAX_WIDTH = 600; // Mobilde daha hızlı yüklenmesi için maksimum genişliği 600px yaptık
                 const scaleSize = MAX_WIDTH / img.width;
                 
                 canvas.width = MAX_WIDTH;
@@ -204,7 +248,7 @@ fileInput.addEventListener("change", (e) => {
                 const ctx = canvas.getContext("2d");
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-                const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
+                const compressedBase64 = canvas.toDataURL("image/jpeg", 0.65);
                 sendCustomMessage(compressedBase64, "image");
             };
             img.src = event.target.result;
@@ -325,11 +369,11 @@ function listenForMessages() {
 
             let contentBody = "";
             if (data.messageType === "image") {
-                contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] max-h-[200px] object-cover cursor-pointer mb-1 shadow-inner" onclick="window.open(this.src)">`;
+                contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[160px] max-h-[160px] md:max-w-[200px] md:max-h-[200px] object-cover cursor-pointer mb-1 shadow-inner" onclick="window.open(this.src)">`;
             } else if (data.messageType === "file") {
                 contentBody = `<a href="${data.fileData}" download="dosya" class="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold text-xs underline mb-1"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 01-2-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg> Dosyayı İndir</a>`;
             } else if (data.messageType === "audio") {
-                contentBody = `<audio src="${data.fileData}" controls class="w-[220px] h-8 mb-1 scale-95 origin-left"></audio>`;
+                contentBody = `<audio src="${data.fileData}" controls class="w-[180px] md:w-[220px] h-8 mb-1 scale-95 origin-left"></audio>`;
             } else {
                 contentBody = `<p class="whitespace-pre-wrap break-words">${data.message}</p>`;
             }
@@ -337,8 +381,8 @@ function listenForMessages() {
             const messageHtml = `
                 <div class="group relative flex flex-col ${isMe ? 'self-end' : 'self-start'}">
                     ${deleteBtnHtml}
-                    <div class="max-w-xs md:max-w-md p-2.5 px-4 shadow-sm text-[14.5px] ${messageBg} ${roundedCorner} flex flex-col gap-0.5 relative min-w-[95px]">
-                        <div class="pr-10 pb-1">${contentBody}</div>
+                    <div class="max-w-[75vw] md:max-w-md p-2.5 px-4 shadow-sm text-[14.5px] ${messageBg} ${roundedCorner} flex flex-col gap-0.5 relative min-w-[95px]">
+                        <div class="pr-8 pb-1">${contentBody}</div>
                         <div class="text-[10px] text-gray-400 dark:text-gray-400/70 absolute bottom-1 right-2 select-none flex items-center gap-0.5">
                             <span>${timeString}</span>
                             ${ticksHtml}
@@ -351,3 +395,10 @@ function listenForMessages() {
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     });
 }
+
+// Ekran boyutu değiştiğinde yerleşimi otomatik kontrol et
+window.addEventListener("resize", () => {
+    if (currentUser) {
+        applyMobileView("chat");
+    }
+});
