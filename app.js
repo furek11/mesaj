@@ -4,6 +4,16 @@ import {
     doc, setDoc, updateDoc, where, getDocs
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
+// === EMAILJS CONFIG (Buradaki Değerleri Kendi Bilgilerinle Doldur) ===
+const EMAILJS_PUBLIC_KEY = "5TpnpoaEEVUg3ekL1";
+const EMAILJS_SERVICE_ID = "service_45dlxnd";
+const EMAILJS_TEMPLATE_ID = "template_lfnx7dm";
+
+// EmailJS Başlatma
+if (typeof emailjs !== "undefined" && EMAILJS_PUBLIC_KEY !== "YOUR_PUBLIC_KEY") {
+    emailjs.init(EMAILJS_PUBLIC_KEY);
+}
+
 let currentUser = "";
 let chatPartner = "";
 let typingTimeout = null;
@@ -35,12 +45,10 @@ const avatarPlaceholder = document.getElementById("avatar-placeholder");
 const sidebarArea = document.getElementById("sidebar-area");
 const chatArea = document.getElementById("chat-area");
 
-// Dark Mode Kontrolü
 darkModeToggle.addEventListener("click", () => {
     document.documentElement.classList.toggle("dark");
 });
 
-// Tam Ekran Özelliği
 fullscreenBtn.addEventListener("click", () => {
     if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().then(() => {
@@ -52,6 +60,27 @@ fullscreenBtn.addEventListener("click", () => {
         });
     }
 });
+
+// === EMAIL NOTİFİKASYON MOTORU ===
+async function sendEmailNotification(messageText, contentType = "metin") {
+    // Karşı taraf çevrimiçiyse e-posta atarak rahatsız etme, sadece çevrimdışıysa at
+    if (isPartnerOnline) return;
+    if (EMAILJS_PUBLIC_KEY === "YOUR_PUBLIC_KEY") return;
+
+    const templateParams = {
+        to_name: chatPartner,
+        from_name: currentUser,
+        message: contentType === "metin" ? messageText : `Sana bir ${contentType} gönderdi. Görmek için uygulamaya gir!`,
+        reply_to: "no-reply@mesajlasma.com"
+    };
+
+    try {
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams);
+        console.log("EmailJS: Bildirim e-postası başarıyla gönderildi!");
+    } catch (error) {
+        console.error("EmailJS Hatası:", error);
+    }
+}
 
 window.selectUser = function(user) {
     currentUser = user;
@@ -169,6 +198,9 @@ async function sendCustomMessage(payload, type = "text") {
             fileData: type !== "text" ? payload : "",
             messageType: type, timestamp: serverTimestamp(), status: initialStatus
         });
+        
+        // E-posta bildirimini tetikle
+        sendEmailNotification(payload, type === "text" ? "metin" : type === "image" ? "fotoğraf" : "ses kaydı");
     } catch (e) { console.error(e); }
 }
 
