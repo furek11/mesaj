@@ -18,38 +18,56 @@ const loginScreen = document.getElementById("login-screen");
 const chatScreen = document.getElementById("chat-screen");
 const currentUserNameEl = document.getElementById("current-user-name");
 const chatPartnerNameEl = document.getElementById("chat-partner-name");
+const chatHeaderPartnerNameEl = document.getElementById("chat-header-partner-name");
 const messageInput = document.getElementById("message-input");
 const sendBtn = document.getElementById("send-btn");
 const messagesContainer = document.getElementById("messages-container");
 const fileInput = document.getElementById("file-input");
 const voiceBtn = document.getElementById("voice-btn");
 const darkModeToggle = document.getElementById("dark-mode-toggle");
+const fullscreenBtn = document.getElementById("fullscreen-btn");
 
 const partnerStatusSidebar = document.getElementById("partner-status-sidebar");
 const partnerStatusHeader = document.getElementById("partner-status-header");
 const statusIndicatorDot = document.getElementById("status-indicator-dot");
 const avatarPlaceholder = document.getElementById("avatar-placeholder");
 
-// Ekran Alanları
 const sidebarArea = document.getElementById("sidebar-area");
 const chatArea = document.getElementById("chat-area");
 
+// Dark Mode Kontrolü
 darkModeToggle.addEventListener("click", () => {
     document.documentElement.classList.toggle("dark");
 });
 
+// Tam Ekran Özelliği
+fullscreenBtn.addEventListener("click", () => {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().then(() => {
+            fullscreenBtn.innerHTML = `<i class="fa-solid fa-compress"></i>`;
+        }).catch(err => console.error(err));
+    } else {
+        document.exitFullscreen().then(() => {
+            fullscreenBtn.innerHTML = `<i class="fa-solid fa-expand"></i>`;
+        });
+    }
+});
+
 window.selectUser = function(user) {
     currentUser = user;
-    chatPartner = (currentUser === "Kullanıcı 1") ? "Kullanıcı 2" : "Kullanıcı 1";
+    chatPartner = (currentUser === "Mat Dehası") ? "Biyolojinin Son Kalesi" : "Mat Dehası";
 
     currentUserNameEl.textContent = currentUser;
     chatPartnerNameEl.textContent = chatPartner;
-    if(avatarPlaceholder) avatarPlaceholder.textContent = chatPartner.charAt(chatPartner.length - 1);
+    if(chatHeaderPartnerNameEl) chatHeaderPartnerNameEl.textContent = chatPartner;
+    
+    if(avatarPlaceholder) {
+        avatarPlaceholder.textContent = chatPartner.charAt(0);
+    }
 
     loginScreen.classList.add("hidden");
     chatScreen.classList.remove("hidden");
 
-    // Masaüstünde her şey açık başlar, mobilde ise ilk başta listeyi gösteririz
     if (window.innerWidth <= 768) {
         window.closeChatArea();
     }
@@ -63,7 +81,6 @@ window.selectUser = function(user) {
     markIncomingMessagesAsRead();
 };
 
-// MOBİL EKRAN GEÇİŞ FONKSİYONLARI
 window.openChatArea = function() {
     if (window.innerWidth <= 768) {
         if (sidebarArea) sidebarArea.classList.add("hidden");
@@ -226,7 +243,7 @@ function listenForMessages() {
             let messageBg = isMe ? "bg-[#d9fdd3] dark:bg-emerald-900/40 text-gray-800 dark:text-gray-100 self-end rounded-l-xl rounded-br-xl" : "bg-white dark:bg-zinc-700 text-gray-800 dark:text-gray-100 self-start rounded-r-xl rounded-bl-xl";
             
             let contentBody = "";
-            if (data.messageType === "image") contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] object-cover" onclick="window.open(this.src)">`;
+            if (data.messageType === "image") contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] object-cover shadow-sm" onclick="window.open(this.src)">`;
             else if (data.messageType === "audio") contentBody = `<audio src="${data.fileData}" controls class="w-[180px] h-8"></audio>`;
             else contentBody = `<p class="break-words max-w-[65vw] md:max-w-md">${data.message}</p>`;
 
@@ -249,10 +266,19 @@ function listenForMessages() {
     });
 }
 
-// Ekran genişliği masaüstüne dönerse yerleşimi koru
 window.addEventListener("resize", () => {
     if (currentUser && window.innerWidth > 768) {
         if (sidebarArea) sidebarArea.classList.remove("hidden");
         if (chatArea) { chatArea.classList.remove("hidden"); chatArea.classList.add("flex"); }
     }
 });
+
+if (messageInput) {
+    messageInput.addEventListener("focus", () => {
+        setTimeout(() => {
+            if (messagesContainer) {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+        }, 300);
+    });
+}
