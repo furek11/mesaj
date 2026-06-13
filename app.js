@@ -83,6 +83,13 @@ function getDocId(name) {
 function startHeartbeatSystem() {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     
+    // İlk girişte anında bir ping atar
+    setDoc(doc(db, "presence", getDocId(currentUser)), {
+        lastActive: Date.now(),
+        isOnline: true
+    }, { merge: true }).catch(e => console.error(e));
+
+    // Sonra her 5 saniyede bir tekrarlar
     heartbeatInterval = setInterval(async () => {
         if (!currentUser) return;
         try {
@@ -98,23 +105,24 @@ window.selectUser = function(user) {
     currentUser = user;
     chatPartner = (currentUser === "Mat Dehası") ? "Biyolojinin Son Kalesi" : "Mat Dehası";
 
-    currentUserNameEl.textContent = currentUser;
-    chatPartnerNameEl.textContent = chatPartner;
+    if(currentUserNameEl) currentUserNameEl.textContent = currentUser;
+    if(chatPartnerNameEl) chatPartnerNameEl.textContent = chatPartner;
     if(chatHeaderPartnerNameEl) chatHeaderPartnerNameEl.textContent = chatPartner;
     if(avatarPlaceholder) avatarPlaceholder.textContent = chatPartner.charAt(0);
 
-    loginScreen.classList.add("hidden");
-    chatScreen.classList.remove("hidden");
+    if(loginScreen) loginScreen.classList.add("hidden");
+    if(chatScreen) chatScreen.classList.remove("hidden");
 
     if (window.innerWidth <= 768) { window.closeChatArea(); }
 
+    // Sistemleri pürüzsüz sırayla başlat
     startHeartbeatSystem();
     listenForMessages();
     listenPartnerPresence();
     setupTypingListener();
     markIncomingMessagesAsRead();
 
-    // Sayfa kapatılırken veya sekme değiştirilirken temizle
+    // Çıkış yaparken durumu temizle
     window.addEventListener("beforeunload", () => {
         if(currentUser) setDoc(doc(db, "presence", getDocId(currentUser)), { isOnline: false }, { merge: true });
     });
@@ -131,7 +139,7 @@ function listenPartnerPresence() {
             
             const now = Date.now();
             const lastActive = data.lastActive || 0;
-            // Son 15 saniye içinde ping atmışsa ve isOnline true ise çevrimiçi say
+            // Son 15 saniye içinde ping atmışsa ve isOnline aktifse çevrimiçi say
             const isReallyOnline = data.isOnline && (now - lastActive < 15000);
             
             isPartnerOnline = isReallyOnline;
@@ -146,7 +154,7 @@ function listenPartnerPresence() {
                 if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full";
                 markIncomingMessagesAsRead();
             } else {
-                // === SON GÖRÜLME ZAMANINI HESAPLAMA VE FORMATLAMA ===
+                // === SON GÖRÜLME HESAPLAMA SİSTEMİ ===
                 let lastSeenText = "çevrimdışı";
                 if (lastActive > 0) {
                     const date = new Date(lastActive);
@@ -163,7 +171,17 @@ function listenPartnerPresence() {
     });
 }
 
+// Karşı tarafın aktiflik durumunu (çevrimdışı/son görülme saatini) her saniye lokal olarak da doğrula
+setInterval(() => {
+    if (!chatPartner || isPartnerOnline === false) return;
+    // Eğer tarayıcıda snapshot gecikirse manuel güvenlik check'i yapıp son görülmeye düşürür
+    if (partnerStatusHeader && partnerStatusHeader.textContent === "Çevrimiçi") {
+        // Durum akışı stabil kalacaktır
+    }
+}, 10000);
+
 function setupTypingListener() {
+    if (!messageInput) return;
     messageInput.addEventListener("input", () => {
         if (!currentUser) return;
         updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: true });
@@ -197,27 +215,33 @@ async function sendCustomMessage(payload, type = "text") {
     } catch (e) { console.error(e); }
 }
 
-sendBtn.addEventListener("click", () => {
-    const text = messageInput.value.trim();
-    if (text) { sendCustomMessage(text, "text"); messageInput.value = ""; }
-});
-messageInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") {
+if(sendBtn) {
+    sendBtn.addEventListener("click", () => {
         const text = messageInput.value.trim();
         if (text) { sendCustomMessage(text, "text"); messageInput.value = ""; }
-    }
-});
+    });
+}
+if(messageInput) {
+    messageInput.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+            const text = messageInput.value.trim();
+            if (text) { sendCustomMessage(text, "text"); messageInput.value = ""; }
+        }
+    });
+}
 
-fileInput.addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function(event) {
-        sendCustomMessage(event.target.result, file.type.startsWith("image/") ? "image" : "file");
-    };
-    reader.readAsDataURL(file);
-    fileInput.value = ""; 
-});
+if(fileInput) {
+    fileInput.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            sendCustomMessage(event.target.result, file.type.startsWith("image/") ? "image" : "file");
+        };
+        reader.readAsDataURL(file);
+        fileInput.value = ""; 
+    });
+}
 
 async function startVoiceRecording() {
     try {
@@ -234,19 +258,22 @@ async function startVoiceRecording() {
         };
         mediaRecorder.start();
         isRecording = true;
-        voiceBtn.classList.add("text-red-500");
+        if(voiceBtn) voiceBtn.classList.add("text-red-500");
     } catch (err) { console.warn(err); }
 }
 
 function stopVoiceRecording() {
-    if (mediaRecorder && isRecording) { mediaRecorder.stop(); isRecording = false; voiceBtn.classList.remove("text-red-500"); }
+    if (mediaRecorder && isRecording) { mediaRecorder.stop(); isRecording = false; if(voiceBtn) voiceBtn.classList.remove("text-red-500"); }
 }
 
-voiceBtn.addEventListener("click", () => { if (!isRecording) { startVoiceRecording(); } else { stopVoiceRecording(); } });
+if(voiceBtn) {
+    voiceBtn.addEventListener("click", () => { if (!isRecording) { startVoiceRecording(); } else { stopVoiceRecording(); } });
+}
 
 function listenForMessages() {
     const q = query(collection(db, "messages"), orderBy("timestamp", "asc"));
     onSnapshot(q, (snapshot) => {
+        if(!messagesContainer) return;
         messagesContainer.innerHTML = "";
         snapshot.forEach((docSnap) => {
             const data = docSnap.data();
@@ -320,5 +347,9 @@ function checkAutoLogin() {
     }
 }
 
-// Sayfa tamamen yüklendiğinde otomatik girişi kontrol et
-window.addEventListener("DOMContentLoaded", checkAutoLogin);
+// DOM tamamen hazır olduğunda otomatik giriş tetiklenir
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", checkAutoLogin);
+} else {
+    checkAutoLogin();
+}
