@@ -5,9 +5,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // === EMAILJS CONFIG ===
-const EMAILJS_PUBLIC_KEY = "5TpnpoaEEVUg3ekL1";
-const EMAILJS_SERVICE_ID = "service_45dlxnd";
-const EMAILJS_TEMPLATE_ID = "template_lfnx7dm";
+const EMAILJS_PUBLIC_KEY = "YOUR_PUBLIC_KEY";
+const EMAILJS_SERVICE_ID = "YOUR_SERVICE_ID";
+const EMAILJS_TEMPLATE_ID = "YOUR_TEMPLATE_ID";
 
 if (typeof emailjs !== "undefined" && EMAILJS_PUBLIC_KEY !== "YOUR_PUBLIC_KEY") {
     emailjs.init(EMAILJS_PUBLIC_KEY);
@@ -17,6 +17,7 @@ let currentUser = "";
 let chatPartner = "";
 let typingTimeout = null;
 let isPartnerOnline = false;
+let heartbeatInterval = null;
 
 let mediaRecorder = null;
 let audioChunks = [];
@@ -71,16 +72,27 @@ async function sendEmailNotification(messageText, contentType = "metin") {
         reply_to: "no-reply@mesajlasma.com"
     };
 
-    try {
-        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams);
-    } catch (error) {
-        console.error("EmailJS Hatası:", error);
-    }
+    try { await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams); } catch (e) { console.error(e); }
 }
 
-// Güvenli Kimlik Formatlayıcı (Firebase Doküman Yolları İçin Boşlukları Temizler)
 function getDocId(name) {
     return name.replace(/\s+/g, '_');
+}
+
+// === SÜREKLİ AKTİFLİK DENETLEME SİSTEMİ (HEARTBEAT) ===
+function startHeartbeatSystem() {
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    
+    // Her 5 saniyede bir veritabanına "aktifim" zaman damgası gönderir
+    heartbeatInterval = setInterval(async () => {
+        if (!currentUser) return;
+        try {
+            await setDoc(doc(db, "presence", getDocId(currentUser)), {
+                lastActive: Date.now(),
+                isOnline: true
+            }, { merge: true });
+        } catch (e) { console.error("Ping Hatası:", e); }
+    }, 5000);
 }
 
 window.selectUser = function(user) {
@@ -90,85 +102,50 @@ window.selectUser = function(user) {
     currentUserNameEl.textContent = currentUser;
     chatPartnerNameEl.textContent = chatPartner;
     if(chatHeaderPartnerNameEl) chatHeaderPartnerNameEl.textContent = chatPartner;
-    
-    if(avatarPlaceholder) {
-        avatarPlaceholder.textContent = chatPartner.charAt(0);
-    }
+    if(avatarPlaceholder) avatarPlaceholder.textContent = chatPartner.charAt(0);
 
     loginScreen.classList.add("hidden");
     chatScreen.classList.remove("hidden");
 
-    if (window.innerWidth <= 768) {
-        window.closeChatArea();
-    }
+    if (window.innerWidth <= 768) { window.closeChatArea(); }
 
-    setUserPresence(true);
-    
-    // Uygulama kapatılırken veya sekmeler arası geçişte çevrimdışı yap
-    window.addEventListener("beforeunload", () => { setUserPresence(false); });
-    document.addEventListener("visibilitychange", () => {
-        setUserPresence(document.visibilityState === 'visible');
-    });
-
+    // Sistemleri Başlat
+    startHeartbeatSystem();
     listenForMessages();
     listenPartnerPresence();
     setupTypingListener();
     markIncomingMessagesAsRead();
-};
 
-window.openChatArea = function() {
-    if (window.innerWidth <= 768) {
-        if (sidebarArea) sidebarArea.classList.add("hidden");
-        if (chatArea) {
-            chatArea.classList.remove("hidden", "md:flex");
-            chatArea.classList.add("flex", "w-full", "h-full");
-        }
-    }
-    setTimeout(() => { if(messagesContainer) messagesContainer.scrollTop = messagesContainer.scrollHeight; }, 100);
+    // Çıkış yaparken temizle
+    window.addEventListener("beforeunload", () => {
+        if(currentUser) setDoc(doc(db, "presence", getDocId(currentUser)), { isOnline: false, lastActive: 0 }, { merge: true });
+    });
 };
-
-window.closeChatArea = function() {
-    if (window.innerWidth <= 768) {
-        if (sidebarArea) sidebarArea.classList.remove("hidden");
-        if (chatArea) {
-            chatArea.classList.add("hidden", "md:flex");
-            chatArea.classList.remove("flex", "w-full", "h-full");
-        }
-    }
-};
-
-async function setUserPresence(isOnline) {
-    if (!currentUser) return;
-    try {
-        await setDoc(doc(db, "presence", getDocId(currentUser)), {
-            isOnline: isOnline, isTyping: false, lastSeen: serverTimestamp()
-        }, { merge: true });
-    } catch (e) { console.error(e); }
-}
 
 function listenPartnerPresence() {
     onSnapshot(doc(db, "presence", getDocId(chatPartner)), (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data();
-            isPartnerOnline = data.isOnline;
             
-            if (data.isTyping) {
+            // Eğer karşı tarafın son pingi 15 saniyeden eskiyse onu çevrimdışı say
+            const now = Date.now();
+            const lastActive = data.lastActive || 0;
+            const isReallyOnline = data.isOnline && (now - lastActive < 15000);
+            
+            isPartnerOnline = isReallyOnline;
+            
+            if (data.isTyping && isReallyOnline) {
                 if(partnerStatusSidebar) partnerStatusSidebar.textContent = "Yazıyor...";
                 if(partnerStatusHeader) partnerStatusHeader.textContent = "yazıyor...";
                 if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full animate-pulse";
-            } else if (data.isOnline) {
+            } else if (isReallyOnline) {
                 if(partnerStatusSidebar) partnerStatusSidebar.textContent = "Çevrimiçi";
                 if(partnerStatusHeader) partnerStatusHeader.textContent = "Çevrimiçi";
                 if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full";
                 markIncomingMessagesAsRead();
             } else {
-                let lastSeenText = "çevrimdışı";
-                if (data.lastSeen) {
-                    const date = data.lastSeen.toDate();
-                    lastSeenText = `Son görülme ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-                }
-                if(partnerStatusSidebar) partnerStatusSidebar.textContent = lastSeenText;
-                if(partnerStatusHeader) partnerStatusHeader.textContent = lastSeenText;
+                if(partnerStatusSidebar) partnerStatusSidebar.textContent = "Çevrimdışı";
+                if(partnerStatusHeader) partnerStatusHeader.textContent = "Çevrimdışı";
                 if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-gray-400 rounded-full";
             }
         }
@@ -205,7 +182,6 @@ async function sendCustomMessage(payload, type = "text") {
             fileData: type !== "text" ? payload : "",
             messageType: type, timestamp: serverTimestamp(), status: initialStatus
         });
-        
         sendEmailNotification(payload, type === "text" ? "metin" : type === "image" ? "fotoğraf" : "ses kaydı");
     } catch (e) { console.error(e); }
 }
@@ -311,7 +287,6 @@ window.addEventListener("resize", () => {
     }
 });
 
-// Klavye açıldığında input alanını görünür alana taşır ve mesajları kaydırır
 if (messageInput) {
     messageInput.addEventListener("focus", () => {
         setTimeout(() => {
