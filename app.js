@@ -83,7 +83,6 @@ function getDocId(name) {
 function startHeartbeatSystem() {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     
-    // Her 5 saniyede bir veritabanına "aktifim" zaman damgası gönderir
     heartbeatInterval = setInterval(async () => {
         if (!currentUser) return;
         try {
@@ -109,16 +108,19 @@ window.selectUser = function(user) {
 
     if (window.innerWidth <= 768) { window.closeChatArea(); }
 
-    // Sistemleri Başlat
     startHeartbeatSystem();
     listenForMessages();
     listenPartnerPresence();
     setupTypingListener();
     markIncomingMessagesAsRead();
 
-    // Çıkış yaparken temizle
+    // Sayfa kapatılırken veya sekme değiştirilirken temizle
     window.addEventListener("beforeunload", () => {
-        if(currentUser) setDoc(doc(db, "presence", getDocId(currentUser)), { isOnline: false, lastActive: 0 }, { merge: true });
+        if(currentUser) setDoc(doc(db, "presence", getDocId(currentUser)), { isOnline: false }, { merge: true });
+    });
+    document.addEventListener("visibilitychange", () => {
+        const status = document.visibilityState === 'visible';
+        if(currentUser) setDoc(doc(db, "presence", getDocId(currentUser)), { isOnline: status }, { merge: true });
     });
 };
 
@@ -127,9 +129,9 @@ function listenPartnerPresence() {
         if (docSnap.exists()) {
             const data = docSnap.data();
             
-            // Eğer karşı tarafın son pingi 15 saniyeden eskiyse onu çevrimdışı say
             const now = Date.now();
             const lastActive = data.lastActive || 0;
+            // Son 15 saniye içinde ping atmışsa ve isOnline true ise çevrimiçi say
             const isReallyOnline = data.isOnline && (now - lastActive < 15000);
             
             isPartnerOnline = isReallyOnline;
@@ -144,8 +146,17 @@ function listenPartnerPresence() {
                 if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full";
                 markIncomingMessagesAsRead();
             } else {
-                if(partnerStatusSidebar) partnerStatusSidebar.textContent = "Çevrimdışı";
-                if(partnerStatusHeader) partnerStatusHeader.textContent = "Çevrimdışı";
+                // === SON GÖRÜLME ZAMANINI HESAPLAMA VE FORMATLAMA ===
+                let lastSeenText = "çevrimdışı";
+                if (lastActive > 0) {
+                    const date = new Date(lastActive);
+                    const hours = String(date.getHours()).padStart(2, '0');
+                    const minutes = String(date.getMinutes()).padStart(2, '0');
+                    lastSeenText = `Son görülme ${hours}:${minutes}`;
+                }
+                
+                if(partnerStatusSidebar) partnerStatusSidebar.textContent = lastSeenText;
+                if(partnerStatusHeader) partnerStatusHeader.textContent = lastSeenText;
                 if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-gray-400 rounded-full";
             }
         }
@@ -296,3 +307,18 @@ if (messageInput) {
         }, 300);
     });
 }
+
+// === URL PARAMETRESİ İLE OTOMATİK GİRİŞ SİSTEMİ ===
+function checkAutoLogin() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const userParam = urlParams.get('user');
+
+    if (userParam === 'mat') {
+        window.selectUser('Mat Dehası');
+    } else if (userParam === 'biyoloji') {
+        window.selectUser('Biyolojinin Son Kalesi');
+    }
+}
+
+// Sayfa tamamen yüklendiğinde otomatik girişi kontrol et
+window.addEventListener("DOMContentLoaded", checkAutoLogin);
