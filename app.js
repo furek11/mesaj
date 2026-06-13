@@ -92,22 +92,18 @@ async function forceSendPing(isOnlineStatus) {
 
 function startHeartbeatSystem() {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
-    
-    // Anında ilk sinyal
     forceSendPing(true);
-
-    // Mobilde arka planda uyusa bile her 4 saniyede bir tetik dener
     heartbeatInterval = setInterval(() => {
         forceSendPing(true);
     }, 4000);
 }
 
-// === MOBİL SOHBET ALANI AÇMA MOTORU (KORUNAN VE SABİTLENEN) ===
+// === SOHBET ALANI KONTROLLERİ ===
 window.openChatArea = function() {
     if (sidebarArea) sidebarArea.classList.add("hidden");
     if (chatArea) {
         chatArea.classList.remove("hidden", "md:flex");
-        chatArea.classList.add("flex", "w-full", "h-full");
+        chatArea.classList.add("flex", "w-full");
     }
     setTimeout(() => { if(messagesContainer) messagesContainer.scrollTop = messagesContainer.scrollHeight; }, 150);
 };
@@ -116,7 +112,7 @@ window.closeChatArea = function() {
     if (sidebarArea) sidebarArea.classList.remove("hidden");
     if (chatArea) {
         chatArea.classList.add("hidden", "md:flex");
-        chatArea.classList.remove("flex", "w-full", "h-full");
+        chatArea.classList.remove("flex", "w-full");
     }
 };
 
@@ -132,7 +128,6 @@ window.selectUser = function(user) {
     if(loginScreen) loginScreen.classList.add("hidden");
     if(chatScreen) chatScreen.classList.remove("hidden");
 
-    // Masaüstünde varsayılan sağ taraf açık kalır, mobilde ise tıklama beklenir
     if (window.innerWidth > 768) {
         if (chatArea) { chatArea.classList.remove("hidden"); chatArea.classList.add("flex"); }
     } else {
@@ -145,13 +140,12 @@ window.selectUser = function(user) {
     setupTypingListener();
     markIncomingMessagesAsRead();
 
-    // Mobil cihaz uyku/sekme değişim korumaları
     window.addEventListener("beforeunload", () => { forceSendPing(false); });
     window.addEventListener("pagehide", () => { forceSendPing(false); });
     
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === 'visible') {
-            startHeartbeatSystem(); // Sekmeye dönünce ping motorunu yeniden canlandır
+            startHeartbeatSystem();
         } else {
             forceSendPing(false);
         }
@@ -164,10 +158,8 @@ function listenPartnerPresence() {
     onSnapshot(doc(db, "presence", getDocId(chatPartner)), (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data();
-            
             const now = Date.now();
             const lastActive = data.lastActive || 0;
-            // Toleransı 20 saniyeye çıkardık (mobil ağ gecikmeleri için idealdir)
             const isReallyOnline = data.isOnline && (now - lastActive < 20000);
             
             isPartnerOnline = isReallyOnline;
@@ -189,7 +181,6 @@ function listenPartnerPresence() {
                     const minutes = String(date.getMinutes()).padStart(2, '0');
                     lastSeenText = `Son görülme ${hours}:${minutes}`;
                 }
-                
                 if(partnerStatusSidebar) partnerStatusSidebar.textContent = lastSeenText;
                 if(partnerStatusHeader) partnerStatusHeader.textContent = lastSeenText;
                 if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-gray-400 rounded-full";
@@ -343,13 +334,16 @@ window.addEventListener("resize", () => {
     }
 });
 
+// Klavye odağında ekranı kaydırma ve yerleşimi zorlama motoru
 if (messageInput) {
     messageInput.addEventListener("focus", () => {
         setTimeout(() => {
             if (messagesContainer) {
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
-        }, 250);
+            // iOS Safari ve Android Chrome için ekranın üst barını yerine kenetler
+            window.scrollTo(0, 0);
+        }, 200);
     });
 }
 
