@@ -61,6 +61,29 @@ fullscreenBtn.addEventListener("click", () => {
     }
 });
 
+// === MOBİL KLAVYE VE EKRAN BOYUTU KİLİTLEME MOTORU ===
+function adjustLayoutForKeyboard() {
+    if (!window.visualViewport) return;
+    
+    const handleResize = () => {
+        const viewportHeight = window.visualViewport.height;
+        // Ekranın dış iskeletini klavyeden bağımsız olarak net görünür alana eşitler
+        document.body.style.height = `${viewportHeight}px`;
+        const appContainer = document.getElementById("app-container");
+        if (appContainer) appContainer.style.height = `${viewportHeight}px`;
+        
+        // Klavye açıldığında en alta yumuşak bir kaydırma fırlatır
+        if (currentUser && messagesContainer) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        window.scrollTo(0, 0);
+    };
+
+    window.visualViewport.addEventListener('resize', handleResize);
+    window.visualViewport.addEventListener('scroll', handleResize);
+}
+adjustLayoutForKeyboard();
+
 async function sendEmailNotification(messageText, contentType = "metin") {
     if (isPartnerOnline) return;
     if (EMAILJS_PUBLIC_KEY === "YOUR_PUBLIC_KEY") return;
@@ -79,7 +102,6 @@ function getDocId(name) {
     return name.replace(/\s+/g, '_');
 }
 
-// === GÜVENLİ VE MOBİL UYUMLU PING MOTORU ===
 async function forceSendPing(isOnlineStatus) {
     if (!currentUser) return;
     try {
@@ -98,7 +120,6 @@ function startHeartbeatSystem() {
     }, 4000);
 }
 
-// === SOHBET ALANI KONTROLLERİ ===
 window.openChatArea = function() {
     if (sidebarArea) sidebarArea.classList.add("hidden");
     if (chatArea) {
@@ -334,16 +355,14 @@ window.addEventListener("resize", () => {
     }
 });
 
-// Klavye odağında ekranı kaydırma ve yerleşimi zorlama motoru
 if (messageInput) {
     messageInput.addEventListener("focus", () => {
         setTimeout(() => {
             if (messagesContainer) {
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
-            // iOS Safari ve Android Chrome için ekranın üst barını yerine kenetler
             window.scrollTo(0, 0);
-        }, 200);
+        }, 150);
     });
 }
 
