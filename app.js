@@ -79,27 +79,46 @@ function getDocId(name) {
     return name.replace(/\s+/g, '_');
 }
 
-// === SÜREKLİ AKTİFLİK DENETLEME SİSTEMİ (HEARTBEAT) ===
+// === GÜVENLİ VE MOBİL UYUMLU PING MOTORU ===
+async function forceSendPing(isOnlineStatus) {
+    if (!currentUser) return;
+    try {
+        await setDoc(doc(db, "presence", getDocId(currentUser)), {
+            lastActive: Date.now(),
+            isOnline: isOnlineStatus
+        }, { merge: true });
+    } catch (e) { console.error("Ping Hatası:", e); }
+}
+
 function startHeartbeatSystem() {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     
-    // İlk girişte anında bir ping atar
-    setDoc(doc(db, "presence", getDocId(currentUser)), {
-        lastActive: Date.now(),
-        isOnline: true
-    }, { merge: true }).catch(e => console.error(e));
+    // Anında ilk sinyal
+    forceSendPing(true);
 
-    // Sonra her 5 saniyede bir tekrarlar
-    heartbeatInterval = setInterval(async () => {
-        if (!currentUser) return;
-        try {
-            await setDoc(doc(db, "presence", getDocId(currentUser)), {
-                lastActive: Date.now(),
-                isOnline: true
-            }, { merge: true });
-        } catch (e) { console.error("Ping Hatası:", e); }
-    }, 5000);
+    // Mobilde arka planda uyusa bile her 4 saniyede bir tetik dener
+    heartbeatInterval = setInterval(() => {
+        forceSendPing(true);
+    }, 4000);
 }
+
+// === MOBİL SOHBET ALANI AÇMA MOTORU (KORUNAN VE SABİTLENEN) ===
+window.openChatArea = function() {
+    if (sidebarArea) sidebarArea.classList.add("hidden");
+    if (chatArea) {
+        chatArea.classList.remove("hidden", "md:flex");
+        chatArea.classList.add("flex", "w-full", "h-full");
+    }
+    setTimeout(() => { if(messagesContainer) messagesContainer.scrollTop = messagesContainer.scrollHeight; }, 150);
+};
+
+window.closeChatArea = function() {
+    if (sidebarArea) sidebarArea.classList.remove("hidden");
+    if (chatArea) {
+        chatArea.classList.add("hidden", "md:flex");
+        chatArea.classList.remove("flex", "w-full", "h-full");
+    }
+};
 
 window.selectUser = function(user) {
     currentUser = user;
@@ -113,23 +132,32 @@ window.selectUser = function(user) {
     if(loginScreen) loginScreen.classList.add("hidden");
     if(chatScreen) chatScreen.classList.remove("hidden");
 
-    if (window.innerWidth <= 768) { window.closeChatArea(); }
+    // Masaüstünde varsayılan sağ taraf açık kalır, mobilde ise tıklama beklenir
+    if (window.innerWidth > 768) {
+        if (chatArea) { chatArea.classList.remove("hidden"); chatArea.classList.add("flex"); }
+    } else {
+        window.closeChatArea();
+    }
 
-    // Sistemleri pürüzsüz sırayla başlat
     startHeartbeatSystem();
     listenForMessages();
     listenPartnerPresence();
     setupTypingListener();
     markIncomingMessagesAsRead();
 
-    // Çıkış yaparken durumu temizle
-    window.addEventListener("beforeunload", () => {
-        if(currentUser) setDoc(doc(db, "presence", getDocId(currentUser)), { isOnline: false }, { merge: true });
-    });
+    // Mobil cihaz uyku/sekme değişim korumaları
+    window.addEventListener("beforeunload", () => { forceSendPing(false); });
+    window.addEventListener("pagehide", () => { forceSendPing(false); });
+    
     document.addEventListener("visibilitychange", () => {
-        const status = document.visibilityState === 'visible';
-        if(currentUser) setDoc(doc(db, "presence", getDocId(currentUser)), { isOnline: status }, { merge: true });
+        if (document.visibilityState === 'visible') {
+            startHeartbeatSystem(); // Sekmeye dönünce ping motorunu yeniden canlandır
+        } else {
+            forceSendPing(false);
+        }
     });
+    
+    window.addEventListener("focus", () => { startHeartbeatSystem(); });
 };
 
 function listenPartnerPresence() {
@@ -139,8 +167,8 @@ function listenPartnerPresence() {
             
             const now = Date.now();
             const lastActive = data.lastActive || 0;
-            // Son 15 saniye içinde ping atmışsa ve isOnline aktifse çevrimiçi say
-            const isReallyOnline = data.isOnline && (now - lastActive < 15000);
+            // Toleransı 20 saniyeye çıkardık (mobil ağ gecikmeleri için idealdir)
+            const isReallyOnline = data.isOnline && (now - lastActive < 20000);
             
             isPartnerOnline = isReallyOnline;
             
@@ -154,7 +182,6 @@ function listenPartnerPresence() {
                 if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full";
                 markIncomingMessagesAsRead();
             } else {
-                // === SON GÖRÜLME HESAPLAMA SİSTEMİ ===
                 let lastSeenText = "çevrimdışı";
                 if (lastActive > 0) {
                     const date = new Date(lastActive);
@@ -170,15 +197,6 @@ function listenPartnerPresence() {
         }
     });
 }
-
-// Karşı tarafın aktiflik durumunu (çevrimdışı/son görülme saatini) her saniye lokal olarak da doğrula
-setInterval(() => {
-    if (!chatPartner || isPartnerOnline === false) return;
-    // Eğer tarayıcıda snapshot gecikirse manuel güvenlik check'i yapıp son görülmeye düşürür
-    if (partnerStatusHeader && partnerStatusHeader.textContent === "Çevrimiçi") {
-        // Durum akışı stabil kalacaktır
-    }
-}, 10000);
 
 function setupTypingListener() {
     if (!messageInput) return;
@@ -331,7 +349,7 @@ if (messageInput) {
             if (messagesContainer) {
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
-        }, 300);
+        }, 250);
     });
 }
 
@@ -347,7 +365,6 @@ function checkAutoLogin() {
     }
 }
 
-// DOM tamamen hazır olduğunda otomatik giriş tetiklenir
 if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", checkAutoLogin);
 } else {
