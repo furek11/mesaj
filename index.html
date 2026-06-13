@@ -11,7 +11,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <style>
-        /* Tarayıcının tüm varsayılan kaydırma esnekliklerini sıfırlıyoruz */
         html, body {
             height: 100%;
             width: 100%;
@@ -22,12 +21,11 @@
             margin: 0;
             padding: 0;
             -webkit-tap-highlight-color: transparent;
-            touch-action: none; /* Sayfanın kendisinin aşağı yukarı kaymasını tamamen engeller */
+            touch-action: none;
         }
         .safe-bottom {
             padding-bottom: calc(8px + env(safe-area-inset-bottom));
         }
-        /* JavaScript'in dinamik olarak yöneteceği ana kapsayıcı */
         #app-container {
             width: 100%;
             height: 100%;
@@ -37,12 +35,27 @@
             overflow: hidden;
             position: relative;
         }
-        /* Sadece mesajların olduğu alanın kendi içinde özgürce kayabilmesi için */
         #messages-container {
             flex: 1;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
-            touch-action: pan-y; /* Sadece bu alanın dikey kaymasına izin verilir */
+            touch-action: pan-y;
+        }
+        /* Tam ekran modunda klavye açılınca elementlerin görünüm alanına tam sığmasını garanti eder */
+        :fullscreen #chat-screen {
+            height: 100% !important;
+            max-height: 100% !important;
+        }
+        :-webkit-full-screen #chat-screen {
+            height: 100% !important;
+            max-height: 100% !important;
+        }
+        /* Dinamik büyüyen textarea için scroll gizleme ve estetik */
+        #message-input {
+            resize: none;
+            max-height: 120px;
+            min-height: 40px;
+            line-height: 20px;
         }
     </style>
 </head>
@@ -116,28 +129,29 @@
 
                 <div id="messages-container" class="p-4 flex flex-col gap-3 relative z-10"></div>
 
-                <div id="input-bar-container" class="p-2.5 sm:p-3 bg-gray-50 dark:bg-zinc-800 border-t border-gray-100 dark:border-zinc-700/50 flex items-center gap-2 relative z-30 shrink-0 safe-bottom shadow-[0_-2px_10px_rgba(0,0,0,0.03)] w-full">
+                <div id="input-bar-container" class="p-2 sm:p-3 bg-gray-50 dark:bg-zinc-800 border-t border-gray-100 dark:border-zinc-700/50 flex items-center gap-2 relative z-30 shrink-0 safe-bottom shadow-[0_-2px_10px_rgba(0,0,0,0.03)] w-full items-end">
                     
-                    <label class="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-zinc-700 text-gray-500 dark:text-zinc-300 border border-gray-200 dark:border-zinc-600 cursor-pointer active:scale-95 transition shrink-0 shadow-sm">
+                    <label class="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-zinc-700 text-gray-500 dark:text-zinc-300 border border-gray-200 dark:border-zinc-600 cursor-pointer active:scale-95 transition shrink-0 shadow-sm mb-0.5">
                         <i class="fa-solid fa-paperclip text-lg"></i>
                         <input type="file" id="file-input" class="hidden">
                     </label>
 
-                    <button type="button" id="voice-btn" class="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-zinc-700 text-gray-500 dark:text-zinc-300 border border-gray-200 dark:border-zinc-600 active:scale-95 transition shrink-0 shadow-sm">
+                    <button type="button" id="voice-btn" class="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-zinc-700 text-gray-500 dark:text-zinc-300 border border-gray-200 dark:border-zinc-600 active:scale-95 transition shrink-0 shadow-sm mb-0.5">
                         <i class="fa-solid fa-microphone text-lg"></i>
                     </button>
 
                     <div class="flex-1 relative">
-                        <input type="search" id="message-input" 
-                               autocomplete="off"
-                               autocorrect="off" 
-                               autocapitalize="off" 
-                               spellcheck="false" 
-                               placeholder="Bir mesaj yazın..." 
-                               class="w-full h-10 pl-4 pr-4 bg-white dark:bg-zinc-700 border border-gray-200 dark:border-zinc-600 rounded-xl text-gray-800 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-400 shadow-sm text-[15px] focus:outline-none focus:border-emerald-500 dark:focus:border-emerald-400 transition-all [appearance:none] [&::-webkit-search-cancel-button]:hidden">
+                        <textarea id="message-input" 
+                                  rows="1"
+                                  autocomplete="new-password" 
+                                  autocorrect="off" 
+                                  autocapitalize="off" 
+                                  spellcheck="false" 
+                                  placeholder="Bir mesaj yazın..." 
+                                  class="w-full py-2.5 pl-4 pr-4 bg-white dark:bg-zinc-700 border border-gray-200 dark:border-zinc-600 rounded-xl text-gray-800 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-400 shadow-sm text-[15px] focus:outline-none focus:border-emerald-500 dark:focus:border-emerald-400 transition-all block overflow-y-auto min-h-[40px]"></textarea>
                     </div>
 
-                    <button type="button" id="send-btn" class="w-10 h-10 flex items-center justify-center rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white shrink-0 shadow-md transition">
+                    <button type="button" id="send-btn" class="w-10 h-10 flex items-center justify-center rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white shrink-0 shadow-md transition mb-0.5">
                         <i class="fa-solid fa-paper-plane text-sm"></i>
                     </button>
                 </div>
@@ -145,6 +159,6 @@
         </div>
     </div>
 
-    <script type="module" src="app.js?v=2.7.0"></script>
+    <script type="module" src="app.js?v=2.8.0"></script>
 </body>
 </html>

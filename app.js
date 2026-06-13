@@ -53,36 +53,47 @@ fullscreenBtn.addEventListener("click", () => {
     if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().then(() => {
             fullscreenBtn.innerHTML = `<i class="fa-solid fa-compress"></i>`;
+            setTimeout(forceLayoutRefresh, 300); // Tam ekrana girişte yerleşimi yenile
         }).catch(err => console.error(err));
     } else {
         document.exitFullscreen().then(() => {
             fullscreenBtn.innerHTML = `<i class="fa-solid fa-expand"></i>`;
+            setTimeout(forceLayoutRefresh, 300); // Tam ekrandan çıkışta yerleşimi yenile
         });
     }
 });
 
-// === MOBİL KLAVYE VE EKRAN BOYUTU KİLİTLEME MOTORU ===
+// === EKRA BOYUTU VE KLAVYE KİLİTLEME MOTORU ===
+function forceLayoutRefresh() {
+    if (!window.visualViewport) return;
+    const viewportHeight = window.visualViewport.height;
+    document.body.style.height = `${viewportHeight}px`;
+    const appContainer = document.getElementById("app-container");
+    if (appContainer) appContainer.style.height = `${viewportHeight}px`;
+    
+    if (currentUser && messagesContainer) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+    window.scrollTo(0, 0);
+}
+
 function adjustLayoutForKeyboard() {
     if (!window.visualViewport) return;
-    
-    const handleResize = () => {
-        const viewportHeight = window.visualViewport.height;
-        // Ekranın dış iskeletini klavyeden bağımsız olarak net görünür alana eşitler
-        document.body.style.height = `${viewportHeight}px`;
-        const appContainer = document.getElementById("app-container");
-        if (appContainer) appContainer.style.height = `${viewportHeight}px`;
-        
-        // Klavye açıldığında en alta yumuşak bir kaydırma fırlatır
-        if (currentUser && messagesContainer) {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-        window.scrollTo(0, 0);
-    };
-
-    window.visualViewport.addEventListener('resize', handleResize);
-    window.visualViewport.addEventListener('scroll', handleResize);
+    window.visualViewport.addEventListener('resize', forceLayoutRefresh);
+    window.visualViewport.addEventListener('scroll', forceLayoutRefresh);
 }
 adjustLayoutForKeyboard();
+
+// === TEXTAREA AUTO-RESİZE (DİNAMİK BÜYÜME) MOTORU ===
+function autoResizeTextArea() {
+    if (!messageInput) return;
+    messageInput.style.height = 'auto';
+    // İçerik uzunluğuna göre yüksekliği hesapla, maksimum 120px sınırı CSS'tedir
+    messageInput.style.height = (messageInput.scrollHeight) + 'px';
+}
+if(messageInput) {
+    messageInput.addEventListener('input', autoResizeTextArea);
+}
 
 async function sendEmailNotification(messageText, contentType = "metin") {
     if (isPartnerOnline) return;
@@ -245,17 +256,39 @@ async function sendCustomMessage(payload, type = "text") {
     } catch (e) { console.error(e); }
 }
 
-if(sendBtn) {
-    sendBtn.addEventListener("click", () => {
-        const text = messageInput.value.trim();
-        if (text) { sendCustomMessage(text, "text"); messageInput.value = ""; }
-    });
+// Ortak tetikleyici fonksiyon: Girişi temizler, odağı korur ve boyutu sıfırlar
+function handleMessageSubmit() {
+    const text = messageInput.value.trim();
+    if (text) { 
+        sendCustomMessage(text, "text"); 
+        messageInput.value = ""; 
+        messageInput.style.height = '40px'; // Textarea'yı eski boyutuna sıfırla
+    }
+    // Klavye odağını koru (Kapanmasını engelle)
+    setTimeout(() => { messageInput.focus(); }, 20); 
 }
+
+if(sendBtn) {
+    sendBtn.addEventListener("click", handleMessageSubmit);
+}
+
+// === SMART KEYBOARD MOTORU (PC/MOBİL AYRIMI) ===
 if(messageInput) {
-    messageInput.addEventListener("keypress", (e) => {
+    messageInput.addEventListener("keydown", (e) => {
+        // Eğer kullanıcı mobil cihazdaysa (Dokunmatik ekran desteği varsa)
+        const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
         if (e.key === "Enter") {
-            const text = messageInput.value.trim();
-            if (text) { sendCustomMessage(text, "text"); messageInput.value = ""; }
+            if (isMobile) {
+                // Mobilde Enter tuşu sadece doğal alt satıra geçme işlevi görür, engelleme yapmıyoruz
+                return;
+            } else {
+                // PC'de ise Shift tuşuna basılmıyorsa direkt gönder
+                if (!e.shiftKey) {
+                    e.preventDefault(); // Yeni satır açılmasını engelle
+                    handleMessageSubmit();
+                }
+            }
         }
     });
 }
@@ -327,7 +360,7 @@ function listenForMessages() {
             let contentBody = "";
             if (data.messageType === "image") contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] object-cover shadow-sm" onclick="window.open(this.src)">`;
             else if (data.messageType === "audio") contentBody = `<audio src="${data.fileData}" controls class="w-[180px] h-8"></audio>`;
-            else contentBody = `<p class="break-words max-w-[65vw] md:max-w-md">${data.message}</p>`;
+            else contentBody = `<p class="break-words max-w-[65vw] md:max-w-md whitespace-pre-wrap">${data.message}</p>`; // Satır atlamaları korumak için whitespace eklendi
 
             let statusTick = "";
             if (isMe) {
@@ -366,7 +399,6 @@ if (messageInput) {
     });
 }
 
-// === URL PARAMETRESİ İLE OTOMATİK GİRİŞ SİSTEMİ ===
 function checkAutoLogin() {
     const urlParams = new URLSearchParams(window.location.search);
     const userParam = urlParams.get('user');
