@@ -26,6 +26,10 @@
         .safe-bottom {
             padding-bottom: calc(8px + env(safe-area-inset-bottom));
         }
+        /* Tam ekranda klavye açıldığında input barının altta ezilmesini önleyen ekstra koruma */
+        :fullscreen #input-bar-container, :-webkit-full-screen #input-bar-container {
+            padding-bottom: calc(20px + env(safe-area-inset-bottom)) !important;
+        }
         #app-container {
             width: 100%;
             height: 100%;
@@ -41,16 +45,10 @@
             -webkit-overflow-scrolling: touch;
             touch-action: pan-y;
         }
-        /* Tam ekran modunda klavye açılınca elementlerin görünüm alanına tam sığmasını garanti eder */
-        :fullscreen #chat-screen {
+        :fullscreen #chat-screen, :-webkit-full-screen #chat-screen {
             height: 100% !important;
             max-height: 100% !important;
         }
-        :-webkit-full-screen #chat-screen {
-            height: 100% !important;
-            max-height: 100% !important;
-        }
-        /* Dinamik büyüyen textarea için scroll gizleme ve estetik */
         #message-input {
             resize: none;
             max-height: 120px;
@@ -129,15 +127,15 @@
 
                 <div id="messages-container" class="p-4 flex flex-col gap-3 relative z-10"></div>
 
-                <div id="input-bar-container" class="p-2 sm:p-3 bg-gray-50 dark:bg-zinc-800 border-t border-gray-100 dark:border-zinc-700/50 flex items-center gap-2 relative z-30 shrink-0 safe-bottom shadow-[0_-2px_10px_rgba(0,0,0,0.03)] w-full items-end">
+                <div id="input-bar-container" class="p-2.5 sm:p-3 bg-gray-50 dark:bg-zinc-800 border-t border-gray-100 dark:border-zinc-700/50 flex items-center gap-2 relative z-30 shrink-0 safe-bottom shadow-[0_-2px_10px_rgba(0,0,0,0.03)] w-full items-end">
                     
-                    <label class="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-zinc-700 text-gray-500 dark:text-zinc-300 border border-gray-200 dark:border-zinc-600 cursor-pointer active:scale-95 transition shrink-0 shadow-sm mb-0.5">
+                    <label id="attach-label" class="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-zinc-700 text-gray-500 dark:text-zinc-300 border border-gray-200 dark:border-zinc-600 cursor-pointer active:scale-95 transition shrink-0 shadow-sm mb-0.5">
                         <i class="fa-solid fa-paperclip text-lg"></i>
                         <input type="file" id="file-input" class="hidden">
                     </label>
 
-                    <button type="button" id="voice-btn" class="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-zinc-700 text-gray-500 dark:text-zinc-300 border border-gray-200 dark:border-zinc-600 active:scale-95 transition shrink-0 shadow-sm mb-0.5">
-                        <i class="fa-solid fa-microphone text-lg"></i>
+                    <button type="button" id="voice-cancel-btn" class="hidden w-10 h-10 flex items-center justify-center rounded-xl bg-red-100 dark:bg-red-950/40 text-red-500 active:scale-95 transition shrink-0 mb-0.5" title="Kaydı İptal Et">
+                        <i class="fa-solid fa-trash-can text-lg"></i>
                     </button>
 
                     <div class="flex-1 relative">
@@ -149,7 +147,19 @@
                                   spellcheck="false" 
                                   placeholder="Bir mesaj yazın..." 
                                   class="w-full py-2.5 pl-4 pr-4 bg-white dark:bg-zinc-700 border border-gray-200 dark:border-zinc-600 rounded-xl text-gray-800 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-400 shadow-sm text-[15px] focus:outline-none focus:border-emerald-500 dark:focus:border-emerald-400 transition-all block overflow-y-auto min-h-[40px]"></textarea>
+                        
+                        <div id="voice-status-panel" class="hidden w-full h-10 px-3 bg-white dark:bg-zinc-700 border border-gray-200 dark:border-zinc-600 rounded-xl flex items-center justify-between select-none">
+                            <div class="flex items-center gap-2 text-gray-700 dark:text-zinc-200 text-sm">
+                                <i class="fa-solid fa-microphone text-red-500 animate-pulse"></i>
+                                <span class="font-medium">Ses kaydediliyor...</span>
+                            </div>
+                            <span id="voice-timer" class="text-emerald-500 font-mono font-bold text-[15px]">00:00</span>
+                        </div>
                     </div>
+
+                    <button type="button" id="voice-btn" class="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-zinc-700 text-gray-500 dark:text-zinc-300 border border-gray-200 dark:border-zinc-600 active:scale-95 transition shrink-0 shadow-sm mb-0.5">
+                        <i class="fa-solid fa-microphone text-lg"></i>
+                    </button>
 
                     <button type="button" id="send-btn" class="w-10 h-10 flex items-center justify-center rounded-xl bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white shrink-0 shadow-md transition mb-0.5">
                         <i class="fa-solid fa-paper-plane text-sm"></i>
@@ -159,6 +169,6 @@
         </div>
     </div>
 
-    <script type="module" src="app.js?v=2.8.0"></script>
+    <script type="module" src="app.js?v=2.9.0"></script>
 </body>
 </html>

@@ -19,10 +19,14 @@ let typingTimeout = null;
 let isPartnerOnline = false;
 let heartbeatInterval = null;
 
+// Ses Kayıt Global Değişkenleri
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
+let isRecordCancelled = false; 
 let activeStream = null;
+let voiceDurationSeconds = 0;
+let voiceTimerInterval = null;
 
 const loginScreen = document.getElementById("login-screen");
 const chatScreen = document.getElementById("chat-screen");
@@ -33,9 +37,15 @@ const messageInput = document.getElementById("message-input");
 const sendBtn = document.getElementById("send-btn");
 const messagesContainer = document.getElementById("messages-container");
 const fileInput = document.getElementById("file-input");
-const voiceBtn = document.getElementById("voice-btn");
 const darkModeToggle = document.getElementById("dark-mode-toggle");
 const fullscreenBtn = document.getElementById("fullscreen-btn");
+
+// Yeni Eklenen Ses Elementleri
+const voiceBtn = document.getElementById("voice-btn");
+const voiceCancelBtn = document.getElementById("voice-cancel-btn");
+const attachLabel = document.getElementById("attach-label");
+const voiceStatusPanel = document.getElementById("voice-status-panel");
+const voiceTimer = document.getElementById("voice-timer");
 
 const partnerStatusSidebar = document.getElementById("partner-status-sidebar");
 const partnerStatusHeader = document.getElementById("partner-status-header");
@@ -53,17 +63,16 @@ fullscreenBtn.addEventListener("click", () => {
     if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().then(() => {
             fullscreenBtn.innerHTML = `<i class="fa-solid fa-compress"></i>`;
-            setTimeout(forceLayoutRefresh, 300); // Tam ekrana girişte yerleşimi yenile
+            setTimeout(forceLayoutRefresh, 300);
         }).catch(err => console.error(err));
     } else {
         document.exitFullscreen().then(() => {
             fullscreenBtn.innerHTML = `<i class="fa-solid fa-expand"></i>`;
-            setTimeout(forceLayoutRefresh, 300); // Tam ekrandan çıkışta yerleşimi yenile
+            setTimeout(forceLayoutRefresh, 300);
         });
     }
 });
 
-// === EKRA BOYUTU VE KLAVYE KİLİTLEME MOTORU ===
 function forceLayoutRefresh() {
     if (!window.visualViewport) return;
     const viewportHeight = window.visualViewport.height;
@@ -84,11 +93,9 @@ function adjustLayoutForKeyboard() {
 }
 adjustLayoutForKeyboard();
 
-// === TEXTAREA AUTO-RESİZE (DİNAMİK BÜYÜME) MOTORU ===
 function autoResizeTextArea() {
     if (!messageInput) return;
     messageInput.style.height = 'auto';
-    // İçerik uzunluğuna göre yüksekliği hesapla, maksimum 120px sınırı CSS'tedir
     messageInput.style.height = (messageInput.scrollHeight) + 'px';
 }
 if(messageInput) {
@@ -256,15 +263,19 @@ async function sendCustomMessage(payload, type = "text") {
     } catch (e) { console.error(e); }
 }
 
-// Ortak tetikleyici fonksiyon: Girişi temizler, odağı korur ve boyutu sıfırlar
 function handleMessageSubmit() {
+    // Eğer o esnada ses kaydı yapılıyorsa uçak butonu kaydı onaylayıp gönderir
+    if (isRecording) {
+        stopVoiceRecording(false);
+        return;
+    }
+
     const text = messageInput.value.trim();
     if (text) { 
         sendCustomMessage(text, "text"); 
         messageInput.value = ""; 
-        messageInput.style.height = '40px'; // Textarea'yı eski boyutuna sıfırla
+        messageInput.style.height = '40px'; 
     }
-    // Klavye odağını koru (Kapanmasını engelle)
     setTimeout(() => { messageInput.focus(); }, 20); 
 }
 
@@ -272,22 +283,14 @@ if(sendBtn) {
     sendBtn.addEventListener("click", handleMessageSubmit);
 }
 
-// === SMART KEYBOARD MOTORU (PC/MOBİL AYRIMI) ===
 if(messageInput) {
     messageInput.addEventListener("keydown", (e) => {
-        // Eğer kullanıcı mobil cihazdaysa (Dokunmatik ekran desteği varsa)
         const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-
         if (e.key === "Enter") {
-            if (isMobile) {
-                // Mobilde Enter tuşu sadece doğal alt satıra geçme işlevi görür, engelleme yapmıyoruz
-                return;
-            } else {
-                // PC'de ise Shift tuşuna basılmıyorsa direkt gönder
-                if (!e.shiftKey) {
-                    e.preventDefault(); // Yeni satır açılmasını engelle
-                    handleMessageSubmit();
-                }
+            if (isMobile) return; 
+            if (!e.shiftKey) {
+                e.preventDefault(); 
+                handleMessageSubmit();
             }
         }
     });
@@ -306,31 +309,83 @@ if(fileInput) {
     });
 }
 
+// === ADVANCED WHATSAPP STYLE VOICE SYSTEM ===
 async function startVoiceRecording() {
     try {
         activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(activeStream);
         audioChunks = [];
+        isRecordCancelled = false;
+
         mediaRecorder.ondataavailable = (e) => { audioChunks.push(e.data); };
         mediaRecorder.onstop = () => {
+            clearInterval(voiceTimerInterval);
+            
+            // Eğer kullanıcı çöp kutusuna basıp iptal ettiyse hiçbir işlem yapma
+            if (isRecordCancelled) {
+                resetVoiceUI();
+                if (activeStream) { activeStream.getTracks().forEach(track => track.stop()); activeStream = null; }
+                return;
+            }
+
             const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
             const reader = new FileReader();
             reader.onloadend = () => { sendCustomMessage(reader.result, "audio"); };
             reader.readAsDataURL(audioBlob);
+            
+            resetVoiceUI();
             if (activeStream) { activeStream.getTracks().forEach(track => track.stop()); activeStream = null; }
         };
+
         mediaRecorder.start();
         isRecording = true;
-        if(voiceBtn) voiceBtn.classList.add("text-red-500");
-    } catch (err) { console.warn(err); }
+
+        // Arayüzü Ses Kaydı Moduna Geçir
+        if(messageInput) messageInput.classList.add("hidden");
+        if(attachLabel) attachLabel.classList.add("hidden");
+        if(voiceBtn) voiceBtn.classList.add("hidden");
+        
+        if(voiceCancelBtn) voiceCancelBtn.classList.remove("hidden");
+        if(voiceStatusPanel) voiceStatusPanel.classList.remove("hidden");
+
+        // Sayacı Başlat
+        voiceDurationSeconds = 0;
+        if(voiceTimer) voiceTimer.textContent = "00:00";
+        voiceTimerInterval = setInterval(() => {
+            voiceDurationSeconds++;
+            const mins = String(Math.floor(voiceDurationSeconds / 60)).padStart(2, '0');
+            const secs = String(voiceDurationSeconds % 60).padStart(2, '0');
+            if(voiceTimer) voiceTimer.textContent = `${mins}:${secs}`;
+        }, 1000);
+
+    } catch (err) { console.warn("Mikrofon izni reddedildi:", err); }
 }
 
-function stopVoiceRecording() {
-    if (mediaRecorder && isRecording) { mediaRecorder.stop(); isRecording = false; if(voiceBtn) voiceBtn.classList.remove("text-red-500"); }
+function stopVoiceRecording(shouldCancel = false) {
+    if (mediaRecorder && isRecording) { 
+        isRecordCancelled = shouldCancel;
+        mediaRecorder.stop(); 
+        isRecording = false; 
+    }
+}
+
+function resetVoiceUI() {
+    clearInterval(voiceTimerInterval);
+    if(voiceCancelBtn) voiceCancelBtn.classList.add("hidden");
+    if(voiceStatusPanel) voiceStatusPanel.classList.add("hidden");
+    
+    if(messageInput) messageInput.classList.remove("hidden");
+    if(attachLabel) attachLabel.classList.remove("hidden");
+    if(voiceBtn) voiceBtn.classList.remove("hidden");
+    if(messageInput) messageInput.focus();
 }
 
 if(voiceBtn) {
-    voiceBtn.addEventListener("click", () => { if (!isRecording) { startVoiceRecording(); } else { stopVoiceRecording(); } });
+    voiceBtn.addEventListener("click", () => { if (!isRecording) startVoiceRecording(); });
+}
+
+if(voiceCancelBtn) {
+    voiceCancelBtn.addEventListener("click", () => { stopVoiceRecording(true); });
 }
 
 function listenForMessages() {
@@ -360,7 +415,7 @@ function listenForMessages() {
             let contentBody = "";
             if (data.messageType === "image") contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] object-cover shadow-sm" onclick="window.open(this.src)">`;
             else if (data.messageType === "audio") contentBody = `<audio src="${data.fileData}" controls class="w-[180px] h-8"></audio>`;
-            else contentBody = `<p class="break-words max-w-[65vw] md:max-w-md whitespace-pre-wrap">${data.message}</p>`; // Satır atlamaları korumak için whitespace eklendi
+            else contentBody = `<p class="break-words max-w-[65vw] md:max-w-md whitespace-pre-wrap">${data.message}</p>`;
 
             let statusTick = "";
             if (isMe) {
