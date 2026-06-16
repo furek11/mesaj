@@ -1,33 +1,17 @@
 import { db } from "./firebase-config.js";
 import { 
     collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, 
-    doc, setDoc, updateDoc, where, getDocs, getDoc
+    doc, setDoc, updateDoc, where, getDocs
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging.js";
 
 // === EMAILJS CONFIG ===
-const EMAILJS_PUBLIC_KEY = "YOUR_PUBLIC_KEY";
-const EMAILJS_SERVICE_ID = "YOUR_SERVICE_ID";
-const EMAILJS_TEMPLATE_ID = "YOUR_TEMPLATE_ID";
+const EMAILJS_PUBLIC_KEY = "5TpnpoaEEVUg3ekL1";
+const EMAILJS_SERVICE_ID = "service_45dlxnd";
+const EMAILJS_TEMPLATE_ID = "template_lfnx7dm";
 
 if (typeof emailjs !== "undefined" && EMAILJS_PUBLIC_KEY !== "YOUR_PUBLIC_KEY") {
     emailjs.init(EMAILJS_PUBLIC_KEY);
 }
-
-// === FIREBASE MESSAGING (PUSH NOTIFICATION) CONFIG ===
-// Firebase config nesnenizi firebase-config.js dosyanızdan alabilir veya buraya aynısını yazabilirsiniz.
-const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_AUTH_DOMAIN",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_STORAGE_BUCKET",
-    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-    appId: "YOUR_APP_ID"
-};
-const app = initializeApp(firebaseConfig);
-const messaging = getMessaging(app);
-const VAPID_KEY = "YOUR_VAPID_KEY"; // Firebase konsolundan aldığın Web Push Certificate anahtarı
 
 let currentUser = "";
 let chatPartner = "";
@@ -93,7 +77,7 @@ fullscreenBtn.addEventListener("click", () => {
     }
 });
 
-// === GERI DÖNÜLEMEZ KILITLI KARA DELIK VE ALINTI MOTORU ===
+// === GERİ DÖNÜLEMEZ KİLİTLİ KARA DELİK VE ALINTI MOTORU ===
 const KUMARBAZ_QUOTES = [
     { text: "“Yarın, yarın her şey bitecek!”", url: "https://1000kitap.com/kitap/kumarbaz--126/alintilar" },
     { text: "“Hayatımı bir masaya yatırdım.”", url: "https://1000kitap.com/kitap/kumarbaz--126/alintilar" },
@@ -102,15 +86,19 @@ const KUMARBAZ_QUOTES = [
 ];
 
 function triggerBlackoutSystem() {
+    // 1. Durum dinleyicilerini durdur ve temizle
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     
+    // 2. Tarayıcı geçmişini boz (Geri basılsa bile buraya dönemezler, boş bir eyalette kalırlar)
     window.history.pushState(null, null, window.location.href);
     window.addEventListener('popstate', function () {
         window.history.pushState(null, null, window.location.href);
     });
 
+    // 3. Rastgele alıntı seçimi
     const randomQuote = KUMARBAZ_QUOTES[Math.floor(Math.random() * KUMARBAZ_QUOTES.length)];
 
+    // 4. Tüm DOM'u tamamen yok et ve simsiyah, kilitli bir ekran yap
     document.body.innerHTML = `
         <div style="height:100vh; width:100vw; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#000000; margin:0; padding:24px; box-sizing:border-box; overflow:hidden; touch-action:none; select-none:none;">
             <a href="${randomQuote.url}" target="_blank" rel="noopener noreferrer" style="color:#ffffff; font-family:serif; font-size:18px; font-style:italic; text-align:center; text-decoration:none; max-width:500px; line-height:1.6; animation: fadeIn 1s ease-in-out; cursor:pointer;">
@@ -126,9 +114,13 @@ function triggerBlackoutSystem() {
 
 if (closeTabBtn) {
     closeTabBtn.addEventListener("click", () => {
+        // Firebase'e çıkış yapıldığını hemen bildir
         forceSendPing(false).then(() => {
+            // Tarayıcı kapatmayı dener
             window.open('', '_self', ''); 
             window.close();
+            
+            // Tarayıcı sekmeyi kapatmayı reddettiği an devreye giren kara delik motoru
             triggerBlackoutSystem();
         }).catch(() => {
             triggerBlackoutSystem();
@@ -136,87 +128,7 @@ if (closeTabBtn) {
     });
 }
 
-// === ANLIK BİLDİRİM İZİN VE TOKEN KAYIT SİSTEMİ ===
-async function requestNotificationPermission() {
-    try {
-        const permission = await Notification.requestPermission();
-        if (permission === "granted" && 'serviceWorker' in navigator) {
-            const registration = await navigator.serviceWorker.register('./sw.js');
-            const token = await getToken(messaging, { serviceWorkerRegistration: registration, vapidKey: VAPID_KEY });
-            
-            if (token && currentUser) {
-                // Kullanıcının anlık bildirim alabilmesi için token bilgisini presence tablosuna yazıyoruz
-                await setDoc(doc(db, "presence", getDocId(currentUser)), {
-                    pushToken: token
-                }, { merge: true });
-            }
-        }
-    } catch (error) {
-        console.error("Bildirim izni alınırken hata:", error);
-    }
-}
-
-// Uygulama açıkken (Ön plandayken) bildirim gelirse tarayıcı içi alert veya konsol basar
-onMessage(messaging, (payload) => {
-    console.log("Ön planda bildirim alındı: ", payload);
-});
-
-// === GÜVENLI MAIL VE PUSH NOTIFICATION TETİKLEYİCİSİ ===
-async function sendNotificationRouter(messageText, contentType = "metin") {
-    if (EMAILJS_PUBLIC_KEY === "YOUR_PUBLIC_KEY") return;
-
-    try {
-        const presenceDocRef = doc(db, "presence", getDocId(chatPartner));
-        const presenceSnap = await getDoc(presenceDocRef);
-        
-        if (presenceSnap.exists()) {
-            const pData = presenceSnap.data();
-            const now = Date.now();
-            const lastActive = pData.lastActive || 0;
-            const isTargetReallyOnline = pData.isOnline && (now - lastActive < 20000);
-            
-            if (isTargetReallyOnline) {
-                return; // Karşı taraf aktifse ne mail at ne bildirim gönder
-            }
-
-            const bodyContent = contentType === "metin" ? messageText : `Sana bir ${contentType} gönderdi.`;
-
-            // Eğer karşı tarafın cihaz bildirim token'ı varsa Firebase Cloud Messaging üzerinden anlık bildirim tetikle
-            if (pData.pushToken) {
-                // Web uygulamasından doğrudan FCM API'ye HTTP isteği göndererek anlık push notification tetikliyoruz
-                fetch('https://fcm.googleapis.com/fcm/send', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'key=YOUR_FIREBASE_SERVER_KEY' // Firebase > Project Settings > Cloud Messaging > Legacy Server Key (Aktif edilmelidir)
-                    },
-                    body: JSON.stringify({
-                        to: pData.pushToken,
-                        notification: {
-                            title: `${currentUser}`,
-                            body: bodyContent,
-                            click_action: window.location.origin
-                        }
-                    })
-                }).catch(e => console.error("Push Notification Gönderim Hatası:", e));
-            }
-        }
-
-        // Garanti olsun diye mail sistemini de arka planda yedek olarak çalıştırmaya devam ediyoruz
-        const templateParams = {
-            to_name: chatPartner,
-            from_name: currentUser,
-            message: contentType === "metin" ? messageText : `Sana bir ${contentType} gönderdi. Görmek için uygulamaya gir!`,
-            reply_to: "no-reply@mesajlasma.com"
-        };
-        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams);
-        
-    } catch (e) { 
-        console.error("Bildirim rotasında hata:", e); 
-    }
-}
-
-// === FOTOĞRAF ÖNIZLEME MOTORU ===
+// === FOTOĞRAF ÖNİZLEME MOTORU ===
 window.openImagePreview = function(src) {
     if (!imagePreviewModal || !modalPreviewImg) return;
     modalPreviewImg.src = src;
@@ -316,6 +228,20 @@ function formatLastSeen(lastActiveMs) {
     }
 }
 
+async function sendEmailNotification(messageText, contentType = "metin") {
+    if (isPartnerOnline) return;
+    if (EMAILJS_PUBLIC_KEY === "YOUR_PUBLIC_KEY") return;
+
+    const templateParams = {
+        to_name: chatPartner,
+        from_name: currentUser,
+        message: contentType === "metin" ? messageText : `Sana bir ${contentType} gönderdi. Görmek için uygulamaya gir!`,
+        reply_to: "no-reply@mesajlasma.com"
+    };
+
+    try { await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams); } catch (e) { console.error(e); }
+}
+
 function getDocId(name) {
     return name.replace(/\s+/g, '_');
 }
@@ -378,7 +304,6 @@ window.selectUser = function(user) {
     listenPartnerPresence();
     setupTypingListener();
     markIncomingMessagesAsRead();
-    requestNotificationPermission(); // Kullanıcı giriş yaptığı an anlık bildirim iznini tetikle
 
     window.addEventListener("beforeunload", () => { forceSendPing(false); });
     window.addEventListener("pagehide", () => { forceSendPing(false); });
@@ -457,9 +382,7 @@ async function sendCustomMessage(payload, type = "text") {
             fileData: type !== "text" ? payload : "",
             messageType: type, timestamp: serverTimestamp(), status: initialStatus
         });
-        
-        // Akıllı bildirim yönlendiricisine gönderiyoruz
-        sendNotificationRouter(payload, type === "text" ? "metin" : type === "image" ? "fotoğraf" : "ses kaydı");
+        sendEmailNotification(payload, type === "text" ? "metin" : type === "image" ? "fotoğraf" : "ses kaydı");
     } catch (e) { console.error(e); }
 }
 
