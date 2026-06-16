@@ -54,7 +54,6 @@ const avatarPlaceholder = document.getElementById("avatar-placeholder");
 const sidebarArea = document.getElementById("sidebar-area");
 const chatArea = document.getElementById("chat-area");
 
-// Önizleme Modalı Elementleri
 const imagePreviewModal = document.getElementById("image-preview-modal");
 const modalPreviewImg = document.getElementById("modal-preview-img");
 const modalCloseBtn = document.getElementById("modal-close-btn");
@@ -78,28 +77,33 @@ fullscreenBtn.addEventListener("click", () => {
     }
 });
 
-// === GELİŞMİŞ GÜVENLİ KAPATMA MOTORU ===
+// === BOMBOŞ EKRAN + LİNK DESTEKLİ KAPATMA MOTORU ===
 if (closeTabBtn) {
     closeTabBtn.addEventListener("click", () => {
         forceSendPing(false).then(() => {
+            window.open('', '_self', ''); 
             window.close();
-            // Eğer tarayıcı güvenlik sebebiyle close() komutunu engellerse yönlendir
+            
+            // Eğer tarayıcı engellerse: Tamamen bomboş arayüz ve sadece düz bir link bırak
             setTimeout(() => {
+                const isDarkMode = document.documentElement.classList.contains("dark");
+                const bg = isDarkMode ? "#18181b" : "#ffffff";
+                const textColor = isDarkMode ? "#34d399" : "#059669";
+                
                 document.body.innerHTML = `
-                    <div style="height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#18181b; color:#f4f4f5; font-family:sans-serif; text-align:center; padding:20px;">
-                        <div style="background:#10b981; width:64px; height:64px; border-radius:16px; display:flex; align-items:center; justify-content:center; margin-bottom:16px; font-size:24px; color:white;">✓</div>
-                        <h1 style="font-size:24px; font-weight:bold; margin-bottom:8px;">Oturum Güvenle Kapatıldı</h1>
-                        <p style="color:#a1a1aa; font-size:14px;">Sohbet sekmesini artık manuel olarak kapatabilirsiniz.</p>
+                    <div style="height:100vh; width:100vw; display:flex; align-items:center; justify-content:center; background:${bg}; margin:0; padding:0;">
+                        <a href="javascript:window.open('','_self','');window.close();" style="color:${textColor}; font-family:sans-serif; font-size:15px; font-weight:600; text-decoration:none; padding:10px 20px; border:1px solid ${textColor}; border-radius:8px;">Sekmeyi Kapat</a>
                     </div>
                 `;
-            }, 100);
+            }, 50);
         }).catch(() => {
+            window.open('', '_self', '');
             window.close();
         });
     });
 }
 
-// === FOTOĞRAF ÖNİZLEME (LIGHTBOX) MOTORU ===
+// === FOTOĞRAF ÖNİZLEME MOTORU ===
 window.openImagePreview = function(src) {
     if (!imagePreviewModal || !modalPreviewImg) return;
     modalPreviewImg.src = src;
@@ -563,7 +567,6 @@ function listenForMessages() {
             let messageBg = isMe ? "bg-[#d9fdd3] dark:bg-emerald-900/40 text-gray-800 dark:text-gray-100 self-end rounded-l-xl rounded-br-xl" : "bg-white dark:bg-zinc-700 text-gray-800 dark:text-gray-100 self-start rounded-r-xl rounded-bl-xl";
             
             let contentBody = "";
-            // Tıklayınca yeni sayfa açmak yerine artık uygulama içi modal fonksiyonunu tetikliyor
             if (data.messageType === "image") contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] object-cover shadow-sm cursor-pointer hover:opacity-95 transition" onclick="window.openImagePreview(this.src)">`;
             else if (data.messageType === "audio") contentBody = `<audio src="${data.fileData}" controls class="w-[180px] h-8"></audio>`;
             else contentBody = `<p class="break-words max-w-[65vw] md:max-w-md whitespace-pre-wrap">${data.message}</p>`;
