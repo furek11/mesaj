@@ -1,7 +1,7 @@
 import { db } from "./firebase-config.js";
 import { 
     collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, 
-    doc, setDoc, updateDoc, where, getDocs
+    doc, setDoc, updateDoc, where, getDocs, getDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // === EMAILJS CONFIG ===
@@ -77,7 +77,7 @@ fullscreenBtn.addEventListener("click", () => {
     }
 });
 
-// === GERİ DÖNÜLEMEZ KİLİTLİ KARA DELİK VE ALINTI MOTORU ===
+// === GERI DÖNÜLEMEZ KILITLI KARA DELIK VE ALINTI MOTORU ===
 const KUMARBAZ_QUOTES = [
     { text: "“Yarın, yarın her şey bitecek!”", url: "https://1000kitap.com/kitap/kumarbaz--126/alintilar" },
     { text: "“Hayatımı bir masaya yatırdım.”", url: "https://1000kitap.com/kitap/kumarbaz--126/alintilar" },
@@ -86,19 +86,15 @@ const KUMARBAZ_QUOTES = [
 ];
 
 function triggerBlackoutSystem() {
-    // 1. Durum dinleyicilerini durdur ve temizle
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     
-    // 2. Tarayıcı geçmişini boz (Geri basılsa bile buraya dönemezler, boş bir eyalette kalırlar)
     window.history.pushState(null, null, window.location.href);
     window.addEventListener('popstate', function () {
         window.history.pushState(null, null, window.location.href);
     });
 
-    // 3. Rastgele alıntı seçimi
     const randomQuote = KUMARBAZ_QUOTES[Math.floor(Math.random() * KUMARBAZ_QUOTES.length)];
 
-    // 4. Tüm DOM'u tamamen yok et ve simsiyah, kilitli bir ekran yap
     document.body.innerHTML = `
         <div style="height:100vh; width:100vw; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#000000; margin:0; padding:24px; box-sizing:border-box; overflow:hidden; touch-action:none; select-none:none;">
             <a href="${randomQuote.url}" target="_blank" rel="noopener noreferrer" style="color:#ffffff; font-family:serif; font-size:18px; font-style:italic; text-align:center; text-decoration:none; max-width:500px; line-height:1.6; animation: fadeIn 1s ease-in-out; cursor:pointer;">
@@ -114,13 +110,9 @@ function triggerBlackoutSystem() {
 
 if (closeTabBtn) {
     closeTabBtn.addEventListener("click", () => {
-        // Firebase'e çıkış yapıldığını hemen bildir
         forceSendPing(false).then(() => {
-            // Tarayıcı kapatmayı dener
             window.open('', '_self', ''); 
             window.close();
-            
-            // Tarayıcı sekmeyi kapatmayı reddettiği an devreye giren kara delik motoru
             triggerBlackoutSystem();
         }).catch(() => {
             triggerBlackoutSystem();
@@ -128,7 +120,7 @@ if (closeTabBtn) {
     });
 }
 
-// === FOTOĞRAF ÖNİZLEME MOTORU ===
+// === FOTOĞRAF ÖNIZLEME MOTORU ===
 window.openImagePreview = function(src) {
     if (!imagePreviewModal || !modalPreviewImg) return;
     modalPreviewImg.src = src;
@@ -228,18 +220,40 @@ function formatLastSeen(lastActiveMs) {
     }
 }
 
+// === GÜVENLI VE KESIN MAIL GÖNDERME MOTORU ===
 async function sendEmailNotification(messageText, contentType = "metin") {
-    if (isPartnerOnline) return;
     if (EMAILJS_PUBLIC_KEY === "YOUR_PUBLIC_KEY") return;
 
-    const templateParams = {
-        to_name: chatPartner,
-        from_name: currentUser,
-        message: contentType === "metin" ? messageText : `Sana bir ${contentType} gönderdi. Görmek için uygulamaya gir!`,
-        reply_to: "no-reply@mesajlasma.com"
-    };
+    try {
+        // Mail göndermeden tam 1 salise önce veritabanından hedef kullanıcının AKTIF durumunu sorgula (Anlık cache'e güvenme)
+        const presenceDocRef = doc(db, "presence", getDocId(chatPartner));
+        const presenceSnap = await getDoc(presenceDocRef);
+        
+        if (presenceSnap.exists()) {
+            const pData = presenceSnap.data();
+            const now = Date.now();
+            const lastActive = pData.lastActive || 0;
+            // Eğer karşı taraf veritabanında çevrimiçi işaretliyse ve son pingleme süresi 20 saniyeden yeniyse ASLA mail gönderme
+            const isTargetReallyOnline = pData.isOnline && (now - lastActive < 20000);
+            
+            if (isTargetReallyOnline) {
+                console.log("Karşı taraf şu an uygulamada aktif. Mail gönderimi iptal edildi.");
+                return; 
+            }
+        }
 
-    try { await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams); } catch (e) { console.error(e); }
+        const templateParams = {
+            to_name: chatPartner,
+            from_name: currentUser,
+            message: contentType === "metin" ? messageText : `Sana bir ${contentType} gönderdi. Görmek için uygulamaya gir!`,
+            reply_to: "no-reply@mesajlasma.com"
+        };
+
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams);
+        console.log("Bildirim maili başarıyla sıraya gönderildi.");
+    } catch (e) { 
+        console.error("Mail gönderme aşamasında hata oluştu:", e); 
+    }
 }
 
 function getDocId(name) {
@@ -382,6 +396,8 @@ async function sendCustomMessage(payload, type = "text") {
             fileData: type !== "text" ? payload : "",
             messageType: type, timestamp: serverTimestamp(), status: initialStatus
         });
+        
+        // Mail gönderme kararını tamamen sendEmailNotification fonksiyonuna devrediyoruz
         sendEmailNotification(payload, type === "text" ? "metin" : type === "image" ? "fotoğraf" : "ses kaydı");
     } catch (e) { console.error(e); }
 }
