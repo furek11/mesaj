@@ -124,7 +124,7 @@
                     </div>
                     
                     <div class="flex items-center gap-2">
-                        <button id="close-tab-btn" class="w-9 h-9 flex items-center justify-center rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-950/50 text-red-500 border border-red-100 dark:border-red-900/30 shadow-sm active:scale-95 transition" title="Sekmeyi Kapat">
+                        <button id="close-tab-btn" class="w-9 h-9 flex items-center justify-center rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-950/50 text-red-500 border border-red-100 dark:border-red-900/30 shadow-sm active:scale-95 transition" title="Sohbeti Kapat">
                             <i class="fa-solid fa-power-off text-base"></i>
                         </button>
                     </div>
@@ -136,7 +136,7 @@
                     
                     <label id="attach-label" class="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-zinc-700 text-gray-500 dark:text-zinc-300 border border-gray-200 dark:border-zinc-600 cursor-pointer active:scale-95 transition shrink-0 shadow-sm mb-0.5">
                         <i class="fa-solid fa-paperclip text-lg"></i>
-                        <input type="file" id="file-input" class="hidden">
+                        <input type="file" id="file-input" class="hidden" accept="image/*, audio/*">
                     </label>
 
                     <button type="button" id="voice-cancel-btn" class="hidden w-10 h-10 flex items-center justify-center rounded-xl bg-red-100 dark:bg-red-950/40 text-red-500 active:scale-95 transition shrink-0 mb-0.5" title="Kaydı İptal Et">
@@ -174,6 +174,20 @@
         </div>
     </div>
 
-    <script type="module" src="app.js?v=3.6.0"></script>
+    <div id="image-preview-modal" class="hidden fixed inset-0 bg-black/95 z-50 flex flex-col items-center justify-center p-4 backdrop-blur-sm select-none">
+        <div class="absolute top-4 right-4 flex items-center gap-3 z-50">
+            <button id="modal-download-btn" class="w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white text-lg transition backdrop-blur-md" title="Fotoğrafı İndir">
+                <i class="fa-solid fa-download"></i>
+            </button>
+            <button id="modal-close-btn" class="w-11 h-11 flex items-center justify-center rounded-full bg-red-500/80 hover:bg-red-500 text-white text-lg transition active:scale-95 backdrop-blur-md" title="Kapat ve Sohbete Dön">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="max-w-full max-h-[85vh] flex items-center justify-center">
+            <img id="modal-preview-img" src="" alt="Önizleme" class="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl">
+        </div>
+    </div>
+
+    <script type="module" src="app.js?v=3.7.0"></script>
 </body>
 </html>

@@ -54,6 +54,12 @@ const avatarPlaceholder = document.getElementById("avatar-placeholder");
 const sidebarArea = document.getElementById("sidebar-area");
 const chatArea = document.getElementById("chat-area");
 
+// Önizleme Modalı Elementleri
+const imagePreviewModal = document.getElementById("image-preview-modal");
+const modalPreviewImg = document.getElementById("modal-preview-img");
+const modalCloseBtn = document.getElementById("modal-close-btn");
+const modalDownloadBtn = document.getElementById("modal-download-btn");
+
 darkModeToggle.addEventListener("click", () => {
     document.documentElement.classList.toggle("dark");
 });
@@ -72,15 +78,52 @@ fullscreenBtn.addEventListener("click", () => {
     }
 });
 
-// === SEKME KAPATMA TETİKLEYİCİSİ ===
+// === GELİŞMİŞ GÜVENLİ KAPATMA MOTORU ===
 if (closeTabBtn) {
     closeTabBtn.addEventListener("click", () => {
-        // Çevrimdışı durumunu Firebase'e hemen rapor et
         forceSendPing(false).then(() => {
             window.close();
+            // Eğer tarayıcı güvenlik sebebiyle close() komutunu engellerse yönlendir
+            setTimeout(() => {
+                document.body.innerHTML = `
+                    <div style="height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#18181b; color:#f4f4f5; font-family:sans-serif; text-align:center; padding:20px;">
+                        <div style="background:#10b981; width:64px; height:64px; border-radius:16px; display:flex; align-items:center; justify-content:center; margin-bottom:16px; font-size:24px; color:white;">✓</div>
+                        <h1 style="font-size:24px; font-weight:bold; margin-bottom:8px;">Oturum Güvenle Kapatıldı</h1>
+                        <p style="color:#a1a1aa; font-size:14px;">Sohbet sekmesini artık manuel olarak kapatabilirsiniz.</p>
+                    </div>
+                `;
+            }, 100);
         }).catch(() => {
             window.close();
         });
+    });
+}
+
+// === FOTOĞRAF ÖNİZLEME (LIGHTBOX) MOTORU ===
+window.openImagePreview = function(src) {
+    if (!imagePreviewModal || !modalPreviewImg) return;
+    modalPreviewImg.src = src;
+    imagePreviewModal.classList.remove("hidden");
+};
+
+if (modalCloseBtn) {
+    modalCloseBtn.addEventListener("click", () => {
+        if (imagePreviewModal) imagePreviewModal.classList.add("hidden");
+        if (modalPreviewImg) modalPreviewImg.src = "";
+    });
+}
+
+if (modalDownloadBtn) {
+    modalDownloadBtn.addEventListener("click", () => {
+        if (!modalPreviewImg || !modalPreviewImg.src) return;
+        const base64Data = modalPreviewImg.src;
+        
+        const link = document.createElement("a");
+        link.href = base64Data;
+        link.download = `chat_image_${Date.now()}.jpg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     });
 }
 
@@ -113,7 +156,6 @@ if(messageInput) {
     messageInput.addEventListener('input', autoResizeTextArea);
 }
 
-// === AKILLI TARİH FORMATLAMA MOTORU ===
 function formatSmartDate(timestampMs) {
     const messageDate = new Date(timestampMs);
     const today = new Date();
@@ -135,7 +177,6 @@ function formatSmartDate(timestampMs) {
     return `${messageDate.getDate()} ${months[messageDate.getMonth()]} ${messageDate.getFullYear()}`;
 }
 
-// === AKILLI SON GÖRÜLME FORMATLAMA MOTORU ===
 function formatLastSeen(lastActiveMs) {
     const activeDate = new Date(lastActiveMs);
     const today = new Date();
@@ -522,7 +563,8 @@ function listenForMessages() {
             let messageBg = isMe ? "bg-[#d9fdd3] dark:bg-emerald-900/40 text-gray-800 dark:text-gray-100 self-end rounded-l-xl rounded-br-xl" : "bg-white dark:bg-zinc-700 text-gray-800 dark:text-gray-100 self-start rounded-r-xl rounded-bl-xl";
             
             let contentBody = "";
-            if (data.messageType === "image") contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] object-cover shadow-sm cursor-pointer" onclick="window.open(this.src)">`;
+            // Tıklayınca yeni sayfa açmak yerine artık uygulama içi modal fonksiyonunu tetikliyor
+            if (data.messageType === "image") contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] object-cover shadow-sm cursor-pointer hover:opacity-95 transition" onclick="window.openImagePreview(this.src)">`;
             else if (data.messageType === "audio") contentBody = `<audio src="${data.fileData}" controls class="w-[180px] h-8"></audio>`;
             else contentBody = `<p class="break-words max-w-[65vw] md:max-w-md whitespace-pre-wrap">${data.message}</p>`;
 
