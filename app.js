@@ -19,7 +19,6 @@ let typingTimeout = null;
 let isPartnerOnline = false;
 let heartbeatInterval = null;
 
-// Ses Kayıt Değişkenleri
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
@@ -39,6 +38,7 @@ const messagesContainer = document.getElementById("messages-container");
 const fileInput = document.getElementById("file-input");
 const darkModeToggle = document.getElementById("dark-mode-toggle");
 const fullscreenBtn = document.getElementById("fullscreen-btn");
+const closeTabBtn = document.getElementById("close-tab-btn");
 
 const voiceBtn = document.getElementById("voice-btn");
 const voiceCancelBtn = document.getElementById("voice-cancel-btn");
@@ -71,6 +71,18 @@ fullscreenBtn.addEventListener("click", () => {
         });
     }
 });
+
+// === SEKME KAPATMA TETİKLEYİCİSİ ===
+if (closeTabBtn) {
+    closeTabBtn.addEventListener("click", () => {
+        // Çevrimdışı durumunu Firebase'e hemen rapor et
+        forceSendPing(false).then(() => {
+            window.close();
+        }).catch(() => {
+            window.close();
+        });
+    });
+}
 
 function forceLayoutRefresh() {
     if (!window.visualViewport) return;
@@ -167,7 +179,7 @@ function getDocId(name) {
 async function forceSendPing(isOnlineStatus) {
     if (!currentUser) return;
     try {
-        await setDoc(doc(db, "presence", getDocId(currentUser)), {
+        return await setDoc(doc(db, "presence", getDocId(currentUser)), {
             lastActive: Date.now(),
             isOnline: isOnlineStatus
         }, { merge: true });
@@ -336,13 +348,11 @@ if(messageInput) {
     });
 }
 
-// === FOTOĞRAF KALİTESİNİ DÜŞÜREN AKILLI DOSYA DİNLEYİCİSİ ===
 if(fileInput) {
     fileInput.addEventListener("change", (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
-        // Fotoğraf değilse sıkıştırmadan direkt ham oku (Gelecekteki yapılar için koruma)
         if (!file.type.startsWith("image/")) {
             const reader = new FileReader();
             reader.onload = function(event) {
@@ -353,7 +363,6 @@ if(fileInput) {
             return;
         }
 
-        // Fotoğraf ise Canvas kullanarak kalitesini ve boyutunu kontrollü düşür
         const reader = new FileReader();
         reader.onload = function(event) {
             const img = new Image();
@@ -384,7 +393,6 @@ if(fileInput) {
                 canvas.height = height;
                 ctx.drawImage(img, 0, 0, width, height);
 
-                // Kaliteyi %50'ye düşürerek sıkıştırılmış Base64 çıktı alıyoruz
                 const compressedBase64 = canvas.toDataURL("image/jpeg", 0.50);
                 sendCustomMessage(compressedBase64, "image");
             };
@@ -469,7 +477,6 @@ if(voiceCancelBtn) {
     voiceCancelBtn.addEventListener("click", () => { stopVoiceRecording(true); });
 }
 
-// === GÜN AYRAÇLI YENİ MESAJ DİNLEME MOTORU ===
 function listenForMessages() {
     const q = query(collection(db, "messages"), orderBy("timestamp", "asc"));
     onSnapshot(q, (snapshot) => {
@@ -499,7 +506,6 @@ function listenForMessages() {
                 currentMessageDateString = formatSmartDate(Date.now());
             }
 
-            // GÜN DEĞİŞTİYSE TARİH ŞERİDİ EKLE
             if (currentMessageDateString !== lastDisplayedDateString) {
                 lastDisplayedDateString = currentMessageDateString;
                 const dateSeparatorHtml = `
