@@ -16,7 +16,6 @@ if (typeof emailjs !== "undefined" && EMAILJS_PUBLIC_KEY !== "YOUR_PUBLIC_KEY") 
 }
 
 // === FIREBASE MESSAGING (PUSH NOTIFICATION) CONFIG ===
-// Firebase config nesnenizi firebase-config.js dosyanızdan alabilir veya buraya aynısını yazabilirsiniz.
 const firebaseConfig = {
     apiKey: "YOUR_API_KEY",
     authDomain: "YOUR_AUTH_DOMAIN",
@@ -27,7 +26,7 @@ const firebaseConfig = {
 };
 const app = initializeApp(firebaseConfig);
 const messaging = getMessaging(app);
-const VAPID_KEY = "YOUR_VAPID_KEY"; // Firebase konsolundan aldığın Web Push Certificate anahtarı
+const VAPID_KEY = "YOUR_VAPID_KEY"; 
 
 let currentUser = "";
 let chatPartner = "";
@@ -145,7 +144,6 @@ async function requestNotificationPermission() {
             const token = await getToken(messaging, { serviceWorkerRegistration: registration, vapidKey: VAPID_KEY });
             
             if (token && currentUser) {
-                // Kullanıcının anlık bildirim alabilmesi için token bilgisini presence tablosuna yazıyoruz
                 await setDoc(doc(db, "presence", getDocId(currentUser)), {
                     pushToken: token
                 }, { merge: true });
@@ -156,7 +154,6 @@ async function requestNotificationPermission() {
     }
 }
 
-// Uygulama açıkken (Ön plandayken) bildirim gelirse tarayıcı içi alert veya konsol basar
 onMessage(messaging, (payload) => {
     console.log("Ön planda bildirim alındı: ", payload);
 });
@@ -176,19 +173,17 @@ async function sendNotificationRouter(messageText, contentType = "metin") {
             const isTargetReallyOnline = pData.isOnline && (now - lastActive < 20000);
             
             if (isTargetReallyOnline) {
-                return; // Karşı taraf aktifse ne mail at ne bildirim gönder
+                return; 
             }
 
             const bodyContent = contentType === "metin" ? messageText : `Sana bir ${contentType} gönderdi.`;
 
-            // Eğer karşı tarafın cihaz bildirim token'ı varsa Firebase Cloud Messaging üzerinden anlık bildirim tetikle
             if (pData.pushToken) {
-                // Web uygulamasından doğrudan FCM API'ye HTTP isteği göndererek anlık push notification tetikliyoruz
                 fetch('https://fcm.googleapis.com/fcm/send', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': 'key=YOUR_FIREBASE_SERVER_KEY' // Firebase > Project Settings > Cloud Messaging > Legacy Server Key (Aktif edilmelidir)
+                        'Authorization': 'key=YOUR_FIREBASE_SERVER_KEY' 
                     },
                     body: JSON.stringify({
                         to: pData.pushToken,
@@ -202,7 +197,6 @@ async function sendNotificationRouter(messageText, contentType = "metin") {
             }
         }
 
-        // Garanti olsun diye mail sistemini de arka planda yedek olarak çalıştırmaya devam ediyoruz
         const templateParams = {
             to_name: chatPartner,
             from_name: currentUser,
@@ -355,6 +349,7 @@ window.closeChatArea = function() {
     }
 };
 
+// === GLOBAL GİRİŞ SİSTEMİ BAĞLANTISI (SORUN ÇÖZÜCÜ) ===
 window.selectUser = function(user) {
     currentUser = user;
     chatPartner = (currentUser === "Mat Dehası") ? "Biyolojinin Son Kalesi" : "Mat Dehası";
@@ -378,7 +373,7 @@ window.selectUser = function(user) {
     listenPartnerPresence();
     setupTypingListener();
     markIncomingMessagesAsRead();
-    requestNotificationPermission(); // Kullanıcı giriş yaptığı an anlık bildirim iznini tetikle
+    requestNotificationPermission(); 
 
     window.addEventListener("beforeunload", () => { forceSendPing(false); });
     window.addEventListener("pagehide", () => { forceSendPing(false); });
@@ -458,7 +453,6 @@ async function sendCustomMessage(payload, type = "text") {
             messageType: type, timestamp: serverTimestamp(), status: initialStatus
         });
         
-        // Akıllı bildirim yönlendiricisine gönderiyoruz
         sendNotificationRouter(payload, type === "text" ? "metin" : type === "image" ? "fotoğraf" : "ses kaydı");
     } catch (e) { console.error(e); }
 }
