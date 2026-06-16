@@ -77,28 +77,53 @@ fullscreenBtn.addEventListener("click", () => {
     }
 });
 
-// === BOMBOŞ EKRAN + LİNK DESTEKLİ KAPATMA MOTORU ===
+// === GERİ DÖNÜLEMEZ KİLİTLİ KARA DELİK VE ALINTI MOTORU ===
+const KUMARBAZ_QUOTES = [
+    { text: "“Yarın, yarın her şey bitecek!”", url: "https://1000kitap.com/kitap/kumarbaz--126/alintilar" },
+    { text: "“Hayatımı bir masaya yatırdım.”", url: "https://1000kitap.com/kitap/kumarbaz--126/alintilar" },
+    { text: "“İnsan bazen en olmayacak şeye, en büyük ümidi bağlar.”", url: "https://1000kitap.com/kitap/kumarbaz--126/alintilar" },
+    { text: "“Zirvedeyken her şey o kadar küçük görünür ki...”", url: "https://1000kitap.com/kitap/kumarbaz--126/alintilar" }
+];
+
+function triggerBlackoutSystem() {
+    // 1. Durum dinleyicilerini durdur ve temizle
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    
+    // 2. Tarayıcı geçmişini boz (Geri basılsa bile buraya dönemezler, boş bir eyalette kalırlar)
+    window.history.pushState(null, null, window.location.href);
+    window.addEventListener('popstate', function () {
+        window.history.pushState(null, null, window.location.href);
+    });
+
+    // 3. Rastgele alıntı seçimi
+    const randomQuote = KUMARBAZ_QUOTES[Math.floor(Math.random() * KUMARBAZ_QUOTES.length)];
+
+    // 4. Tüm DOM'u tamamen yok et ve simsiyah, kilitli bir ekran yap
+    document.body.innerHTML = `
+        <div style="height:100vh; width:100vw; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#000000; margin:0; padding:24px; box-sizing:border-box; overflow:hidden; touch-action:none; select-none:none;">
+            <a href="${randomQuote.url}" target="_blank" rel="noopener noreferrer" style="color:#ffffff; font-family:serif; font-size:18px; font-style:italic; text-align:center; text-decoration:none; max-width:500px; line-height:1.6; animation: fadeIn 1s ease-in-out; cursor:pointer;">
+                ${randomQuote.text}
+            </a>
+        </div>
+        <style>
+            @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+            html, body { background: #000000 !important; overflow: hidden !important; height: 100% !important; }
+        </style>
+    `;
+}
+
 if (closeTabBtn) {
     closeTabBtn.addEventListener("click", () => {
+        // Firebase'e çıkış yapıldığını hemen bildir
         forceSendPing(false).then(() => {
+            // Tarayıcı kapatmayı dener
             window.open('', '_self', ''); 
             window.close();
             
-            // Eğer tarayıcı engellerse: Tamamen bomboş arayüz ve sadece düz bir link bırak
-            setTimeout(() => {
-                const isDarkMode = document.documentElement.classList.contains("dark");
-                const bg = isDarkMode ? "#18181b" : "#ffffff";
-                const textColor = isDarkMode ? "#34d399" : "#059669";
-                
-                document.body.innerHTML = `
-                    <div style="height:100vh; width:100vw; display:flex; align-items:center; justify-content:center; background:${bg}; margin:0; padding:0;">
-                        <a href="javascript:window.open('','_self','');window.close();" style="color:${textColor}; font-family:sans-serif; font-size:15px; font-weight:600; text-decoration:none; padding:10px 20px; border:1px solid ${textColor}; border-radius:8px;">Sekmeyi Kapat</a>
-                    </div>
-                `;
-            }, 50);
+            // Tarayıcı sekmeyi kapatmayı reddettiği an devreye giren kara delik motoru
+            triggerBlackoutSystem();
         }).catch(() => {
-            window.open('', '_self', '');
-            window.close();
+            triggerBlackoutSystem();
         });
     });
 }
