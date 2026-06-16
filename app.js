@@ -19,7 +19,6 @@ let typingTimeout = null;
 let isPartnerOnline = false;
 let heartbeatInterval = null;
 
-// Ses Kayıt Global Değişkenleri
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
@@ -40,7 +39,6 @@ const fileInput = document.getElementById("file-input");
 const darkModeToggle = document.getElementById("dark-mode-toggle");
 const fullscreenBtn = document.getElementById("fullscreen-btn");
 
-// Yeni Eklenen Ses Elementleri
 const voiceBtn = document.getElementById("voice-btn");
 const voiceCancelBtn = document.getElementById("voice-cancel-btn");
 const attachLabel = document.getElementById("attach-label");
@@ -100,6 +98,54 @@ function autoResizeTextArea() {
 }
 if(messageInput) {
     messageInput.addEventListener('input', autoResizeTextArea);
+}
+
+// === AKILLI TARİH FORMATLAMA MOTORU ===
+function formatSmartDate(timestampMs) {
+    const messageDate = new Date(timestampMs);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    // Gün, Ay, Yıl eşleşme kontrolleri
+    const isToday = messageDate.getDate() === today.getDate() &&
+                    messageDate.getMonth() === today.getMonth() &&
+                    messageDate.getFullYear() === today.getFullYear();
+
+    const isYesterday = messageDate.getDate() === yesterday.getDate() &&
+                        messageDate.getMonth() === yesterday.getMonth() &&
+                        messageDate.getFullYear() === yesterday.getFullYear();
+
+    if (isToday) return "Bugün";
+    if (isYesterday) return "Dün";
+
+    // Daha eski tarihler için konforlu Türkçe format (Örn: 15 Haziran 2026)
+    const months = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+    return `${messageDate.getDate()} ${months[messageDate.getMonth()]} ${messageDate.getFullYear()}`;
+}
+
+// === AKILLI SON GÖRÜLME FORMATLAMA MOTORU ===
+function formatLastSeen(lastActiveMs) {
+    const activeDate = new Date(lastActiveMs);
+    const today = new Date();
+    
+    // Sadece gün başlangıçlarını (00:00) baz alarak net gün farkı hesabı
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const startOfActiveDay = new Date(activeDate.getFullYear(), activeDate.getMonth(), activeDate.getDate()).getTime();
+    
+    const diffTime = startOfToday - startOfActiveDay;
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+    const hours = String(activeDate.getHours()).padStart(2, '0');
+    const minutes = String(activeDate.getMinutes()).padStart(2, '0');
+
+    if (diffDays === 0) {
+        return `Son görülme bugün ${hours}:${minutes}`;
+    } else if (diffDays === 1) {
+        return `Son görülme dün ${hours}:${minutes}`;
+    } else {
+        return `Son görülme ${diffDays} gün önce`;
+    }
 }
 
 async function sendEmailNotification(messageText, contentType = "metin") {
@@ -213,12 +259,10 @@ function listenPartnerPresence() {
                 if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full";
                 markIncomingMessagesAsRead();
             } else {
+                // Akıllı Son Görülme Entegrasyonu
                 let lastSeenText = "çevrimdışı";
                 if (lastActive > 0) {
-                    const date = new Date(lastActive);
-                    const hours = String(date.getHours()).padStart(2, '0');
-                    const minutes = String(date.getMinutes()).padStart(2, '0');
-                    lastSeenText = `Son görülme ${hours}:${minutes}`;
+                    lastSeenText = formatLastSeen(lastActive);
                 }
                 if(partnerStatusSidebar) partnerStatusSidebar.textContent = lastSeenText;
                 if(partnerStatusHeader) partnerStatusHeader.textContent = lastSeenText;
@@ -264,7 +308,6 @@ async function sendCustomMessage(payload, type = "text") {
 }
 
 function handleMessageSubmit() {
-    // Eğer o esnada ses kaydı yapılıyorsa uçak butonu kaydı onaylayıp gönderir
     if (isRecording) {
         stopVoiceRecording(false);
         return;
@@ -309,7 +352,6 @@ if(fileInput) {
     });
 }
 
-// === ADVANCED WHATSAPP STYLE VOICE SYSTEM ===
 async function startVoiceRecording() {
     try {
         activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -321,7 +363,6 @@ async function startVoiceRecording() {
         mediaRecorder.onstop = () => {
             clearInterval(voiceTimerInterval);
             
-            // Eğer kullanıcı çöp kutusuna basıp iptal ettiyse hiçbir işlem yapma
             if (isRecordCancelled) {
                 resetVoiceUI();
                 if (activeStream) { activeStream.getTracks().forEach(track => track.stop()); activeStream = null; }
@@ -340,7 +381,6 @@ async function startVoiceRecording() {
         mediaRecorder.start();
         isRecording = true;
 
-        // Arayüzü Ses Kaydı Moduna Geçir
         if(messageInput) messageInput.classList.add("hidden");
         if(attachLabel) attachLabel.classList.add("hidden");
         if(voiceBtn) voiceBtn.classList.add("hidden");
@@ -348,7 +388,6 @@ async function startVoiceRecording() {
         if(voiceCancelBtn) voiceCancelBtn.classList.remove("hidden");
         if(voiceStatusPanel) voiceStatusPanel.classList.remove("hidden");
 
-        // Sayacı Başlat
         voiceDurationSeconds = 0;
         if(voiceTimer) voiceTimer.textContent = "00:00";
         voiceTimerInterval = setInterval(() => {
@@ -388,11 +427,15 @@ if(voiceCancelBtn) {
     voiceCancelBtn.addEventListener("click", () => { stopVoiceRecording(true); });
 }
 
+// === TARİH AYRAÇLI YENİ MESAJ DİNLEME MOTORU ===
 function listenForMessages() {
     const q = query(collection(db, "messages"), orderBy("timestamp", "asc"));
     onSnapshot(q, (snapshot) => {
         if(!messagesContainer) return;
         messagesContainer.innerHTML = "";
+        
+        let lastDisplayedDateString = ""; // En son ekrana basılan gün etiketini tutar
+
         snapshot.forEach((docSnap) => {
             const data = docSnap.data();
             const msgId = docSnap.id;
@@ -404,9 +447,29 @@ function listenForMessages() {
             }
 
             let timeString = "00:00";
+            let currentMessageDateString = "";
+
             if (data.timestamp) {
                 const date = data.timestamp.toDate();
                 timeString = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                // Mesajın tarihini "Bugün", "Dün" veya "Gün Ay Yıl" olarak hesapla
+                currentMessageDateString = formatSmartDate(date.getTime());
+            } else {
+                // Firebase henüz timestamp basmadıysa yerel saati al
+                currentMessageDateString = formatSmartDate(Date.now());
+            }
+
+            // Eğer bu mesaj bir önceki mesajdan farklı bir güne aitse, araya tarih çizgisi çek
+            if (currentMessageDateString !== lastDisplayedDateString) {
+                lastDisplayedDateString = currentMessageDateString;
+                const dateSeparatorHtml = `
+                    <div class="flex justify-center my-2 select-none">
+                        <span class="bg-gray-200/80 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 text-xs px-3 py-1 rounded-lg font-medium shadow-sm">
+                            ${currentMessageDateString}
+                        </span>
+                    </div>
+                `;
+                messagesContainer.insertAdjacentHTML("beforeend", dateSeparatorHtml);
             }
 
             const isMe = data.sender === currentUser;
