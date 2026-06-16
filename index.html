@@ -26,6 +26,7 @@
         .safe-bottom {
             padding-bottom: calc(8px + env(safe-area-inset-bottom));
         }
+        /* Tam ekranda klavye açıldığında input barının altta ezilmesini önleyen ekstra koruma */
         :fullscreen #input-bar-container, :-webkit-full-screen #input-bar-container {
             padding-bottom: calc(20px + env(safe-area-inset-bottom)) !important;
         }
@@ -133,7 +134,7 @@
                         <input type="file" id="file-input" class="hidden">
                     </label>
 
-                    <button type="button" id="voice-cancel-btn" class="hidden w-10 h-10 flex items-center justify-center rounded-xl bg-red-100 dark:bg-red-950/40 text-red-500 active:scale-95 transition shrink-0 mb-0.5">
+                    <button type="button" id="voice-cancel-btn" class="hidden w-10 h-10 flex items-center justify-center rounded-xl bg-red-100 dark:bg-red-950/40 text-red-500 active:scale-95 transition shrink-0 mb-0.5" title="Kaydı İptal Et">
                         <i class="fa-solid fa-trash-can text-lg"></i>
                     </button>
 
@@ -168,6 +169,6 @@
         </div>
     </div>
 
-    <script type="module" src="app.js?v=3.0.0"></script>
+    <script type="module" src="app.js?v=3.5.0"></script>
 </body>
 </html>

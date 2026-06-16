@@ -19,6 +19,7 @@ let typingTimeout = null;
 let isPartnerOnline = false;
 let heartbeatInterval = null;
 
+// Ses Kayıt Değişkenleri
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
@@ -107,7 +108,6 @@ function formatSmartDate(timestampMs) {
     const yesterday = new Date();
     yesterday.setDate(today.getDate() - 1);
 
-    // Gün, Ay, Yıl eşleşme kontrolleri
     const isToday = messageDate.getDate() === today.getDate() &&
                     messageDate.getMonth() === today.getMonth() &&
                     messageDate.getFullYear() === today.getFullYear();
@@ -119,7 +119,6 @@ function formatSmartDate(timestampMs) {
     if (isToday) return "Bugün";
     if (isYesterday) return "Dün";
 
-    // Daha eski tarihler için konforlu Türkçe format (Örn: 15 Haziran 2026)
     const months = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
     return `${messageDate.getDate()} ${months[messageDate.getMonth()]} ${messageDate.getFullYear()}`;
 }
@@ -129,7 +128,6 @@ function formatLastSeen(lastActiveMs) {
     const activeDate = new Date(lastActiveMs);
     const today = new Date();
     
-    // Sadece gün başlangıçlarını (00:00) baz alarak net gün farkı hesabı
     const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
     const startOfActiveDay = new Date(activeDate.getFullYear(), activeDate.getMonth(), activeDate.getDate()).getTime();
     
@@ -259,7 +257,6 @@ function listenPartnerPresence() {
                 if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full";
                 markIncomingMessagesAsRead();
             } else {
-                // Akıllı Son Görülme Entegrasyonu
                 let lastSeenText = "çevrimdışı";
                 if (lastActive > 0) {
                     lastSeenText = formatLastSeen(lastActive);
@@ -339,13 +336,58 @@ if(messageInput) {
     });
 }
 
+// === FOTOĞRAF KALİTESİNİ DÜŞÜREN AKILLI DOSYA DİNLEYİCİSİ ===
 if(fileInput) {
     fileInput.addEventListener("change", (e) => {
         const file = e.target.files[0];
         if (!file) return;
+
+        // Fotoğraf değilse sıkıştırmadan direkt ham oku (Gelecekteki yapılar için koruma)
+        if (!file.type.startsWith("image/")) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                sendCustomMessage(event.target.result, "file");
+            };
+            reader.readAsDataURL(file);
+            fileInput.value = "";
+            return;
+        }
+
+        // Fotoğraf ise Canvas kullanarak kalitesini ve boyutunu kontrollü düşür
         const reader = new FileReader();
         reader.onload = function(event) {
-            sendCustomMessage(event.target.result, file.type.startsWith("image/") ? "image" : "file");
+            const img = new Image();
+            img.src = event.target.result;
+            
+            img.onload = function() {
+                const canvas = document.createElement("canvas");
+                const ctx = canvas.getContext("2d");
+
+                const MAX_WIDTH = 800;
+                const MAX_HEIGHT = 800;
+                let width = img.width;
+                let height = img.height;
+
+                if (width > height) {
+                    if (width > MAX_WIDTH) {
+                        height *= MAX_WIDTH / width;
+                        width = MAX_WIDTH;
+                    }
+                } else {
+                    if (height > MAX_HEIGHT) {
+                        width *= MAX_HEIGHT / height;
+                        height = MAX_HEIGHT;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Kaliteyi %50'ye düşürerek sıkıştırılmış Base64 çıktı alıyoruz
+                const compressedBase64 = canvas.toDataURL("image/jpeg", 0.50);
+                sendCustomMessage(compressedBase64, "image");
+            };
         };
         reader.readAsDataURL(file);
         fileInput.value = ""; 
@@ -427,14 +469,14 @@ if(voiceCancelBtn) {
     voiceCancelBtn.addEventListener("click", () => { stopVoiceRecording(true); });
 }
 
-// === TARİH AYRAÇLI YENİ MESAJ DİNLEME MOTORU ===
+// === GÜN AYRAÇLI YENİ MESAJ DİNLEME MOTORU ===
 function listenForMessages() {
     const q = query(collection(db, "messages"), orderBy("timestamp", "asc"));
     onSnapshot(q, (snapshot) => {
         if(!messagesContainer) return;
         messagesContainer.innerHTML = "";
         
-        let lastDisplayedDateString = ""; // En son ekrana basılan gün etiketini tutar
+        let lastDisplayedDateString = ""; 
 
         snapshot.forEach((docSnap) => {
             const data = docSnap.data();
@@ -452,14 +494,12 @@ function listenForMessages() {
             if (data.timestamp) {
                 const date = data.timestamp.toDate();
                 timeString = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-                // Mesajın tarihini "Bugün", "Dün" veya "Gün Ay Yıl" olarak hesapla
                 currentMessageDateString = formatSmartDate(date.getTime());
             } else {
-                // Firebase henüz timestamp basmadıysa yerel saati al
                 currentMessageDateString = formatSmartDate(Date.now());
             }
 
-            // Eğer bu mesaj bir önceki mesajdan farklı bir güne aitse, araya tarih çizgisi çek
+            // GÜN DEĞİŞTİYSE TARİH ŞERİDİ EKLE
             if (currentMessageDateString !== lastDisplayedDateString) {
                 lastDisplayedDateString = currentMessageDateString;
                 const dateSeparatorHtml = `
@@ -476,7 +516,7 @@ function listenForMessages() {
             let messageBg = isMe ? "bg-[#d9fdd3] dark:bg-emerald-900/40 text-gray-800 dark:text-gray-100 self-end rounded-l-xl rounded-br-xl" : "bg-white dark:bg-zinc-700 text-gray-800 dark:text-gray-100 self-start rounded-r-xl rounded-bl-xl";
             
             let contentBody = "";
-            if (data.messageType === "image") contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] object-cover shadow-sm" onclick="window.open(this.src)">`;
+            if (data.messageType === "image") contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] object-cover shadow-sm cursor-pointer" onclick="window.open(this.src)">`;
             else if (data.messageType === "audio") contentBody = `<audio src="${data.fileData}" controls class="w-[180px] h-8"></audio>`;
             else contentBody = `<p class="break-words max-w-[65vw] md:max-w-md whitespace-pre-wrap">${data.message}</p>`;
 
