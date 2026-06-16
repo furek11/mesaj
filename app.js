@@ -5,9 +5,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // === EMAILJS CONFIG ===
-const EMAILJS_PUBLIC_KEY = "5TpnpoaEEVUg3ekL1";
-const EMAILJS_SERVICE_ID = "service_45dlxnd";
-const EMAILJS_TEMPLATE_ID = "template_lfnx7dm";
+const EMAILJS_PUBLIC_KEY = "YOUR_PUBLIC_KEY";
+const EMAILJS_SERVICE_ID = "YOUR_SERVICE_ID";
+const EMAILJS_TEMPLATE_ID = "YOUR_TEMPLATE_ID";
 
 if (typeof emailjs !== "undefined" && EMAILJS_PUBLIC_KEY !== "YOUR_PUBLIC_KEY") {
     emailjs.init(EMAILJS_PUBLIC_KEY);
