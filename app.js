@@ -1,13 +1,13 @@
 import { db } from "./firebase-config.js";
 import { 
     collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, 
-    doc, setDoc, updateDoc, where, getDocs
+    doc, setDoc, updateDoc, where, getDocs, getDoc
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // === EMAILJS CONFIG ===
-const EMAILJS_PUBLIC_KEY = "5TpnpoaEEVUg3ekL1";
-const EMAILJS_SERVICE_ID = "service_45dlxnd";
-const EMAILJS_TEMPLATE_ID = "template_lfnx7dm";
+const EMAILJS_PUBLIC_KEY = "YOUR_PUBLIC_KEY";
+const EMAILJS_SERVICE_ID = "YOUR_SERVICE_ID";
+const EMAILJS_TEMPLATE_ID = "YOUR_TEMPLATE_ID";
 
 if (typeof emailjs !== "undefined" && EMAILJS_PUBLIC_KEY !== "YOUR_PUBLIC_KEY") {
     emailjs.init(EMAILJS_PUBLIC_KEY);
@@ -17,6 +17,7 @@ let currentUser = "";
 let chatPartner = "";
 let typingTimeout = null;
 let isPartnerOnline = false;
+let partnerLastReadTime = 0; // Karşı tarafın okuma zamanını tarayıcı hafızasında tutmak için
 let heartbeatInterval = null;
 
 let mediaRecorder = null;
@@ -77,85 +78,6 @@ fullscreenBtn.addEventListener("click", () => {
     }
 });
 
-// === GERİ DÖNÜLEMEZ KİLİTLİ KARA DELİK VE ALINTI MOTORU ===
-const KUMARBAZ_QUOTES = [
-    { text: "“Yarın, yarın her şey bitecek!”", url: "https://1000kitap.com/kitap/kumarbaz--126/alintilar" },
-    { text: "“Hayatımı bir masaya yatırdım.”", url: "https://1000kitap.com/kitap/kumarbaz--126/alintilar" },
-    { text: "“İnsan bazen en olmayacak şeye, en büyük ümidi bağlar.”", url: "https://1000kitap.com/kitap/kumarbaz--126/alintilar" },
-    { text: "“Zirvedeyken her şey o kadar küçük görünür ki...”", url: "https://1000kitap.com/kitap/kumarbaz--126/alintilar" }
-];
-
-function triggerBlackoutSystem() {
-    // 1. Durum dinleyicilerini durdur ve temizle
-    if (heartbeatInterval) clearInterval(heartbeatInterval);
-    
-    // 2. Tarayıcı geçmişini boz (Geri basılsa bile buraya dönemezler, boş bir eyalette kalırlar)
-    window.history.pushState(null, null, window.location.href);
-    window.addEventListener('popstate', function () {
-        window.history.pushState(null, null, window.location.href);
-    });
-
-    // 3. Rastgele alıntı seçimi
-    const randomQuote = KUMARBAZ_QUOTES[Math.floor(Math.random() * KUMARBAZ_QUOTES.length)];
-
-    // 4. Tüm DOM'u tamamen yok et ve simsiyah, kilitli bir ekran yap
-    document.body.innerHTML = `
-        <div style="height:100vh; width:100vw; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#000000; margin:0; padding:24px; box-sizing:border-box; overflow:hidden; touch-action:none; select-none:none;">
-            <a href="${randomQuote.url}" target="_blank" rel="noopener noreferrer" style="color:#ffffff; font-family:serif; font-size:18px; font-style:italic; text-align:center; text-decoration:none; max-width:500px; line-height:1.6; animation: fadeIn 1s ease-in-out; cursor:pointer;">
-                ${randomQuote.text}
-            </a>
-        </div>
-        <style>
-            @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-            html, body { background: #000000 !important; overflow: hidden !important; height: 100% !important; }
-        </style>
-    `;
-}
-
-if (closeTabBtn) {
-    closeTabBtn.addEventListener("click", () => {
-        // Firebase'e çıkış yapıldığını hemen bildir
-        forceSendPing(false).then(() => {
-            // Tarayıcı kapatmayı dener
-            window.open('', '_self', ''); 
-            window.close();
-            
-            // Tarayıcı sekmeyi kapatmayı reddettiği an devreye giren kara delik motoru
-            triggerBlackoutSystem();
-        }).catch(() => {
-            triggerBlackoutSystem();
-        });
-    });
-}
-
-// === FOTOĞRAF ÖNİZLEME MOTORU ===
-window.openImagePreview = function(src) {
-    if (!imagePreviewModal || !modalPreviewImg) return;
-    modalPreviewImg.src = src;
-    imagePreviewModal.classList.remove("hidden");
-};
-
-if (modalCloseBtn) {
-    modalCloseBtn.addEventListener("click", () => {
-        if (imagePreviewModal) imagePreviewModal.classList.add("hidden");
-        if (modalPreviewImg) modalPreviewImg.src = "";
-    });
-}
-
-if (modalDownloadBtn) {
-    modalDownloadBtn.addEventListener("click", () => {
-        if (!modalPreviewImg || !modalPreviewImg.src) return;
-        const base64Data = modalPreviewImg.src;
-        
-        const link = document.createElement("a");
-        link.href = base64Data;
-        link.download = `chat_image_${Date.now()}.jpg`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    });
-}
-
 function forceLayoutRefresh() {
     if (!window.visualViewport) return;
     const viewportHeight = window.visualViewport.height;
@@ -180,6 +102,14 @@ function autoResizeTextArea() {
     if (!messageInput) return;
     messageInput.style.height = 'auto';
     messageInput.style.height = (messageInput.scrollHeight) + 'px';
+    
+    if (messageInput.value.trim().length > 0) {
+        if (voiceBtn) voiceBtn.classList.add("hidden");
+        if (sendBtn) sendBtn.classList.remove("hidden");
+    } else if (!isRecording) {
+        if (voiceBtn) voiceBtn.classList.remove("hidden");
+        if (sendBtn) sendBtn.classList.add("hidden");
+    }
 }
 if(messageInput) {
     messageInput.addEventListener('input', autoResizeTextArea);
@@ -228,40 +158,29 @@ function formatLastSeen(lastActiveMs) {
     }
 }
 
-async function sendEmailNotification(messageText, contentType = "metin") {
-    if (isPartnerOnline) return;
-    if (EMAILJS_PUBLIC_KEY === "YOUR_PUBLIC_KEY") return;
-
-    const templateParams = {
-        to_name: chatPartner,
-        from_name: currentUser,
-        message: contentType === "metin" ? messageText : `Sana bir ${contentType} gönderdi. Görmek için uygulamaya gir!`,
-        reply_to: "no-reply@mesajlasma.com"
-    };
-
-    try { await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams); } catch (e) { console.error(e); }
-}
-
 function getDocId(name) {
     return name.replace(/\s+/g, '_');
 }
 
+// === OPTİMİZE PİNG FONKSİYONU (lastReadTime entegre edildi) ===
 async function forceSendPing(isOnlineStatus) {
     if (!currentUser) return;
     try {
         return await setDoc(doc(db, "presence", getDocId(currentUser)), {
             lastActive: Date.now(),
-            isOnline: isOnlineStatus
+            isOnline: isOnlineStatus,
+            lastReadTime: Date.now() // Ekstra write maliyeti oluşturmadan pingle beraber gider
         }, { merge: true });
     } catch (e) { console.error("Ping Hatası:", e); }
 }
 
+// FİKİR 1: İlk girişte anında ping, sonrasında her 40 saniyede bir (10 Kat Tasarruf)
 function startHeartbeatSystem() {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
-    forceSendPing(true);
+    forceSendPing(true); 
     heartbeatInterval = setInterval(() => {
         forceSendPing(true);
-    }, 4000);
+    }, 40000); 
 }
 
 window.openChatArea = function() {
@@ -270,6 +189,7 @@ window.openChatArea = function() {
         chatArea.classList.remove("hidden", "md:flex");
         chatArea.classList.add("flex", "w-full");
     }
+    forceSendPing(true); // Sohbet açıldığında okuma zamanını anlık tazele
     setTimeout(() => { if(messagesContainer) messagesContainer.scrollTop = messagesContainer.scrollHeight; }, 150);
 };
 
@@ -290,6 +210,9 @@ window.selectUser = function(user) {
     if(chatHeaderPartnerNameEl) chatHeaderPartnerNameEl.textContent = chatPartner;
     if(avatarPlaceholder) avatarPlaceholder.textContent = chatPartner.charAt(0);
 
+    const avatarSelf = document.getElementById("avatar-self");
+    if(avatarSelf) avatarSelf.textContent = currentUser.charAt(0);
+
     if(loginScreen) loginScreen.classList.add("hidden");
     if(chatScreen) chatScreen.classList.remove("hidden");
 
@@ -299,11 +222,13 @@ window.selectUser = function(user) {
         window.closeChatArea();
     }
 
+    if(sendBtn) sendBtn.classList.add("hidden");
+    if(voiceBtn) voiceBtn.classList.remove("hidden");
+
     startHeartbeatSystem();
     listenForMessages();
     listenPartnerPresence();
     setupTypingListener();
-    markIncomingMessagesAsRead();
 
     window.addEventListener("beforeunload", () => { forceSendPing(false); });
     window.addEventListener("pagehide", () => { forceSendPing(false); });
@@ -325,19 +250,21 @@ function listenPartnerPresence() {
             const data = docSnap.data();
             const now = Date.now();
             const lastActive = data.lastActive || 0;
-            const isReallyOnline = data.isOnline && (now - lastActive < 20000);
+            
+            // Ping aralığı 40s olduğu için tolerans eşiğini 50 saniyeye çektik
+            const isReallyOnline = data.isOnline && (now - lastActive < 50000);
             
             isPartnerOnline = isReallyOnline;
-            
+            partnerLastReadTime = data.lastReadTime || 0; // Karşı tarafın ekrana baktığı son anı yakalıyoruz
+
             if (data.isTyping && isReallyOnline) {
                 if(partnerStatusSidebar) partnerStatusSidebar.textContent = "Yazıyor...";
                 if(partnerStatusHeader) partnerStatusHeader.textContent = "yazıyor...";
-                if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full animate-pulse";
+                if(statusIndicatorDot) statusIndicatorDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse";
             } else if (isReallyOnline) {
                 if(partnerStatusSidebar) partnerStatusSidebar.textContent = "Çevrimiçi";
-                if(partnerStatusHeader) partnerStatusHeader.textContent = "Çevrimiçi";
-                if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full";
-                markIncomingMessagesAsRead();
+                if(partnerStatusHeader) partnerStatusHeader.textContent = "çevrimiçi";
+                if(statusIndicatorDot) statusIndicatorDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500";
             } else {
                 let lastSeenText = "çevrimdışı";
                 if (lastActive > 0) {
@@ -345,7 +272,7 @@ function listenPartnerPresence() {
                 }
                 if(partnerStatusSidebar) partnerStatusSidebar.textContent = lastSeenText;
                 if(partnerStatusHeader) partnerStatusHeader.textContent = lastSeenText;
-                if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-gray-400 rounded-full";
+                if(statusIndicatorDot) statusIndicatorDot.className = "w-2.5 h-2.5 rounded-full bg-gray-400";
             }
         }
     });
@@ -363,40 +290,30 @@ function setupTypingListener() {
     });
 }
 
-async function markIncomingMessagesAsRead() {
-    if (!currentUser || !chatPartner) return;
-    try {
-        const q = query(collection(db, "messages"), where("sender", "==", chatPartner), where("receiver", "==", currentUser), where("status", "!=", "read"));
-        const querySnapshot = await getDocs(q);
-        querySnapshot.forEach((mDoc) => { updateDoc(doc(db, "messages", mDoc.id), { status: "read" }); });
-    } catch (e) { console.error(e); }
-}
-
+// === FİKİR 2: Mesaj içi 'status' alanı ve updateDoc döngüleri TAMAMEN KALDIRILDI (0 Writes) ===
 async function sendCustomMessage(payload, type = "text") {
     try {
         if(currentUser) updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false });
-        const initialStatus = isPartnerOnline ? "delivered" : "sent";
+        
         await addDoc(collection(db, "messages"), {
             sender: currentUser, receiver: chatPartner,
             message: type === "text" ? payload : "",
             fileData: type !== "text" ? payload : "",
-            messageType: type, timestamp: serverTimestamp(), status: initialStatus
+            messageType: type, timestamp: serverTimestamp()
         });
-        sendEmailNotification(payload, type === "text" ? "metin" : type === "image" ? "fotoğraf" : "ses kaydı");
+        
+        sendEmailRouter(payload, type === "text" ? "metin" : type === "image" ? "fotoğraf" : "ses kaydı");
     } catch (e) { console.error(e); }
 }
 
 function handleMessageSubmit() {
-    if (isRecording) {
-        stopVoiceRecording(false);
-        return;
-    }
-
     const text = messageInput.value.trim();
     if (text) { 
         sendCustomMessage(text, "text"); 
         messageInput.value = ""; 
-        messageInput.style.height = '40px'; 
+        messageInput.style.height = '24px'; 
+        if (sendBtn) sendBtn.classList.add("hidden");
+        if (voiceBtn) voiceBtn.classList.remove("hidden");
     }
     setTimeout(() => { messageInput.focus(); }, 20); 
 }
@@ -501,9 +418,9 @@ async function startVoiceRecording() {
         mediaRecorder.start();
         isRecording = true;
 
-        if(messageInput) messageInput.classList.add("hidden");
         if(attachLabel) attachLabel.classList.add("hidden");
         if(voiceBtn) voiceBtn.classList.add("hidden");
+        if(sendBtn) sendBtn.classList.add("hidden");
         
         if(voiceCancelBtn) voiceCancelBtn.classList.remove("hidden");
         if(voiceStatusPanel) voiceStatusPanel.classList.remove("hidden");
@@ -533,14 +450,15 @@ function resetVoiceUI() {
     if(voiceCancelBtn) voiceCancelBtn.classList.add("hidden");
     if(voiceStatusPanel) voiceStatusPanel.classList.add("hidden");
     
-    if(messageInput) messageInput.classList.remove("hidden");
     if(attachLabel) attachLabel.classList.remove("hidden");
     if(voiceBtn) voiceBtn.classList.remove("hidden");
     if(messageInput) messageInput.focus();
 }
 
 if(voiceBtn) {
-    voiceBtn.addEventListener("click", () => { if (!isRecording) startVoiceRecording(); });
+    voiceBtn.addEventListener("click", () => { 
+        if (!isRecording) startVoiceRecording(); 
+    });
 }
 
 if(voiceCancelBtn) {
@@ -557,21 +475,18 @@ function listenForMessages() {
 
         snapshot.forEach((docSnap) => {
             const data = docSnap.data();
-            const msgId = docSnap.id;
             const isBelongsToCurrentChat = (data.sender === currentUser && data.receiver === chatPartner) || (data.sender === chatPartner && data.receiver === currentUser);
             if (!isBelongsToCurrentChat) return;
 
-            if (data.receiver === currentUser && data.status !== "read") {
-                updateDoc(doc(db, "messages", msgId), { status: "read" });
-            }
-
             let timeString = "00:00";
             let currentMessageDateString = "";
+            let msgTimestampMs = Date.now();
 
             if (data.timestamp) {
                 const date = data.timestamp.toDate();
+                msgTimestampMs = date.getTime();
                 timeString = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-                currentMessageDateString = formatSmartDate(date.getTime());
+                currentMessageDateString = formatSmartDate(msgTimestampMs);
             } else {
                 currentMessageDateString = formatSmartDate(Date.now());
             }
@@ -580,7 +495,7 @@ function listenForMessages() {
                 lastDisplayedDateString = currentMessageDateString;
                 const dateSeparatorHtml = `
                     <div class="flex justify-center my-2 select-none">
-                        <span class="bg-gray-200/80 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 text-xs px-3 py-1 rounded-lg font-medium shadow-sm">
+                        <span class="bg-gray-200/80 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 text-xs px-3 py-1 rounded-lg font-medium shadow-sm">
                             ${currentMessageDateString}
                         </span>
                     </div>
@@ -589,24 +504,31 @@ function listenForMessages() {
             }
 
             const isMe = data.sender === currentUser;
-            let messageBg = isMe ? "bg-[#d9fdd3] dark:bg-emerald-900/40 text-gray-800 dark:text-gray-100 self-end rounded-l-xl rounded-br-xl" : "bg-white dark:bg-zinc-700 text-gray-800 dark:text-gray-100 self-start rounded-r-xl rounded-bl-xl";
+            
+            let messageBg = isMe 
+                ? "bg-whatsapp-green text-zinc-100 self-end rounded-l-xl rounded-br-xl rounded-tr-none ml-12" 
+                : "bg-whatsapp-received text-zinc-100 self-start rounded-r-xl rounded-bl-xl rounded-tl-none mr-12";
             
             let contentBody = "";
             if (data.messageType === "image") contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] object-cover shadow-sm cursor-pointer hover:opacity-95 transition" onclick="window.openImagePreview(this.src)">`;
             else if (data.messageType === "audio") contentBody = `<audio src="${data.fileData}" controls class="w-[180px] h-8"></audio>`;
-            else contentBody = `<p class="break-words max-w-[65vw] md:max-w-md whitespace-pre-wrap">${data.message}</p>`;
+            else contentBody = `<p class="break-words max-w-[65vw] md:max-w-md whitespace-pre-wrap text-[14.5px] leading-relaxed">${data.message}</p>`;
 
+            // === VERİTABANI İŞLEMİ YAPMAYAN AKILLI MAVİ TIK MOTORU ===
             let statusTick = "";
             if (isMe) {
-                if (data.status === "read") statusTick = `<span class="text-sky-500 ml-1">✓✓</span>`;
-                else if (data.status === "delivered") statusTick = `<span class="text-gray-400 ml-1">✓✓</span>`;
-                else statusTick = `<span class="text-gray-400 ml-1">✓</span>`;
+                // Mesajın atılma saati karşı tarafın ekrana son baktığı zamandan önce veya eşitse çift tık bas
+                if (msgTimestampMs <= partnerLastReadTime) {
+                    statusTick = `<span class="text-whatsapp-lightGreen ml-1">✓✓</span>`;
+                } else {
+                    statusTick = `<span class="text-zinc-400 ml-1">✓</span>`;
+                }
             }
 
             const messageHtml = `
-                <div class="flex flex-col ${isMe ? 'self-end' : 'self-start'} p-2 px-3 shadow-sm ${messageBg} relative group">
+                <div class="flex flex-col ${isMe ? 'self-end' : 'self-start'} p-2 px-3 shadow-md ${messageBg} relative group max-w-[85%]">
                     ${contentBody}
-                    <span class="text-[9px] text-gray-400 dark:text-gray-400/80 text-right mt-1 block select-none">${timeString} ${statusTick}</span>
+                    <span class="text-[10px] text-zinc-400/80 text-right mt-1 block select-none">${timeString} ${statusTick}</span>
                 </div>
             `;
             messagesContainer.insertAdjacentHTML("beforeend", messageHtml);
@@ -624,6 +546,7 @@ window.addEventListener("resize", () => {
 
 if (messageInput) {
     messageInput.addEventListener("focus", () => {
+        forceSendPing(true); // Giriş alanına tıklanınca okuma zamanını anlık tazele
         setTimeout(() => {
             if (messagesContainer) {
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
