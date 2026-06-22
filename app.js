@@ -387,9 +387,21 @@ function handleMessageSubmit() {
     if (text) { 
         sendCustomMessage(text, "text"); 
         messageInput.value = ""; 
-        messageInput.style.height = '40px'; 
+        
+        // ÖNEMLİ: Yüksekliği doğrudan 40px yapmak yerine 'auto' çekiyoruz, 
+        // böylece DOM'daki ani yükseklik sıçraması klavyeyi kapatmıyor.
+        messageInput.style.height = 'auto'; 
     }
-    setTimeout(() => { messageInput.focus(); }, 20); 
+
+    // Mobil cihazlarda klavyeyi ekranda kilitleyen kritik dokunuş:
+    if (messageInput) {
+        messageInput.focus();
+        // Bazı iOS ve Android tarayıcılarında odağı kaybetmemek için çift dikiş focus
+        setTimeout(() => {
+            messageInput.click(); // Sanal bir tıklama simüle ederek klavyeyi açık tutmaya zorluyoruz
+            messageInput.focus();
+        }, 10);
+    }
 }
 
 if(sendBtn) {
@@ -616,16 +628,25 @@ window.addEventListener("resize", () => {
     }
 });
 
-if (messageInput) {
-    messageInput.addEventListener("focus", () => {
-        // Klavyeye odaklanıldığında veya mesaja tıklanıldığında okuma zamanımızı hemen güncelle
-        forceSendPing(true);
-        setTimeout(() => {
-            if (messagesContainer) {
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+if(messageInput) {
+    messageInput.addEventListener("keydown", (e) => {
+        // Dokunmatik ekran ve mobil tarayıcı tespiti
+        const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        
+        if (e.key === "Enter") {
+            if (isMobile) {
+                // TELEFONLAR: Enter tuşu normalde ne yapıyorsa (alt satıra geçmek) onu yapmaya devam eder
+                return; 
+            } else {
+                // BİLGİSAYARLAR:
+                if (!e.shiftKey) {
+                    // Eğer Shift tuşuna basılmıyorsa: Mesajı gönder
+                    e.preventDefault(); // Varsayılan alt satıra geçme eylemini engelle
+                    handleMessageSubmit(); // Mesajı gönderen fonksiyonu tetikle
+                }
+                // Eğer Shift + Enter yapılıyorsa: Hiçbir şeyi engelleme, tarayıcı doğal olarak alt satıra geçsin
             }
-            window.scrollTo(0, 0);
-        }, 150);
+        }
     });
 }
 
