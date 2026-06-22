@@ -18,7 +18,6 @@ let chatPartner = "";
 let typingTimeout = null;
 let isPartnerOnline = false;
 let heartbeatInterval = null;
-let partnerLastReadTime = 0; // Sıfır maliyetli okundu bilgisi için partnerin son okuma zamanı hafızada tutulur
 
 let mediaRecorder = null;
 let audioChunks = [];
@@ -87,15 +86,19 @@ const KUMARBAZ_QUOTES = [
 ];
 
 function triggerBlackoutSystem() {
+    // 1. Durum dinleyicilerini durdur ve temizle
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     
+    // 2. Tarayıcı geçmişini boz (Geri basılsa bile buraya dönemezler, boş bir eyalette kalırlar)
     window.history.pushState(null, null, window.location.href);
     window.addEventListener('popstate', function () {
         window.history.pushState(null, null, window.location.href);
     });
 
+    // 3. Rastgele alıntı seçimi
     const randomQuote = KUMARBAZ_QUOTES[Math.floor(Math.random() * KUMARBAZ_QUOTES.length)];
 
+    // 4. Tüm DOM'u tamamen yok et ve simsiyah, kilitli bir ekran yap
     document.body.innerHTML = `
         <div style="height:100vh; width:100vw; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#000000; margin:0; padding:24px; box-sizing:border-box; overflow:hidden; touch-action:none; select-none:none;">
             <a href="${randomQuote.url}" target="_blank" rel="noopener noreferrer" style="color:#ffffff; font-family:serif; font-size:18px; font-style:italic; text-align:center; text-decoration:none; max-width:500px; line-height:1.6; animation: fadeIn 1s ease-in-out; cursor:pointer;">
@@ -111,9 +114,13 @@ function triggerBlackoutSystem() {
 
 if (closeTabBtn) {
     closeTabBtn.addEventListener("click", () => {
+        // Firebase'e çıkış yapıldığını hemen bildir
         forceSendPing(false).then(() => {
+            // Tarayıcı kapatmayı dener
             window.open('', '_self', ''); 
             window.close();
+            
+            // Tarayıcı sekmeyi kapatmayı reddettiği an devreye giren kara delik motoru
             triggerBlackoutSystem();
         }).catch(() => {
             triggerBlackoutSystem();
@@ -239,25 +246,22 @@ function getDocId(name) {
     return name.replace(/\s+/g, '_');
 }
 
-// OPTİMİZASYON 1 & 2: lastReadTime veritabanına sadece odaklanma/ping anında 1 kez yazılır. Mesaj başı maliyet biter.
 async function forceSendPing(isOnlineStatus) {
     if (!currentUser) return;
     try {
         return await setDoc(doc(db, "presence", getDocId(currentUser)), {
             lastActive: Date.now(),
-            lastReadTime: Date.now(), // 0 Writes Okundu mimarisinin kalbi burasıdır
             isOnline: isOnlineStatus
         }, { merge: true });
     } catch (e) { console.error("Ping Hatası:", e); }
 }
 
-// OPTİMİZASYON 1: İlk girişte anında tetiklenir, sonraki periyotlar 40 saniyede (40000ms) bire ayarlanır.
 function startHeartbeatSystem() {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     forceSendPing(true);
     heartbeatInterval = setInterval(() => {
         forceSendPing(true);
-    }, 40000); 
+    }, 4000);
 }
 
 window.openChatArea = function() {
@@ -266,8 +270,6 @@ window.openChatArea = function() {
         chatArea.classList.remove("hidden", "md:flex");
         chatArea.classList.add("flex", "w-full");
     }
-    // Sohbet açıldığında okuma zamanımızı sıfır maliyetle güncelle
-    forceSendPing(true);
     setTimeout(() => { if(messagesContainer) messagesContainer.scrollTop = messagesContainer.scrollHeight; }, 150);
 };
 
@@ -301,6 +303,7 @@ window.selectUser = function(user) {
     listenForMessages();
     listenPartnerPresence();
     setupTypingListener();
+    markIncomingMessagesAsRead();
 
     window.addEventListener("beforeunload", () => { forceSendPing(false); });
     window.addEventListener("pagehide", () => { forceSendPing(false); });
@@ -316,18 +319,16 @@ window.selectUser = function(user) {
     window.addEventListener("focus", () => { startHeartbeatSystem(); });
 };
 
-// OPTİMİZASYON 1: Bağlantı tolerans sınırı 40 saniyelik pinge uyumlu olarak 50000 ms (50sn) yapıldı.
 function listenPartnerPresence() {
     onSnapshot(doc(db, "presence", getDocId(chatPartner)), (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data();
             const now = Date.now();
             const lastActive = data.lastActive || 0;
-            const isReallyOnline = data.isOnline && (now - lastActive < 50000); // 50 Saniye tolerans sınırı
+            const isReallyOnline = data.isOnline && (now - lastActive < 20000);
             
             isPartnerOnline = isReallyOnline;
-            partnerLastReadTime = data.lastReadTime || 0; // Partnerin son okuma zamanını hafızaya al
-
+            
             if (data.isTyping && isReallyOnline) {
                 if(partnerStatusSidebar) partnerStatusSidebar.textContent = "Yazıyor...";
                 if(partnerStatusHeader) partnerStatusHeader.textContent = "yazıyor...";
@@ -336,6 +337,7 @@ function listenPartnerPresence() {
                 if(partnerStatusSidebar) partnerStatusSidebar.textContent = "Çevrimiçi";
                 if(partnerStatusHeader) partnerStatusHeader.textContent = "Çevrimiçi";
                 if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-emerald-500 rounded-full";
+                markIncomingMessagesAsRead();
             } else {
                 let lastSeenText = "çevrimdışı";
                 if (lastActive > 0) {
@@ -361,17 +363,24 @@ function setupTypingListener() {
     });
 }
 
+async function markIncomingMessagesAsRead() {
+    if (!currentUser || !chatPartner) return;
+    try {
+        const q = query(collection(db, "messages"), where("sender", "==", chatPartner), where("receiver", "==", currentUser), where("status", "!=", "read"));
+        const querySnapshot = await getDocs(q);
+        querySnapshot.forEach((mDoc) => { updateDoc(doc(db, "messages", mDoc.id), { status: "read" }); });
+    } catch (e) { console.error(e); }
+}
+
 async function sendCustomMessage(payload, type = "text") {
     try {
         if(currentUser) updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false });
+        const initialStatus = isPartnerOnline ? "delivered" : "sent";
         await addDoc(collection(db, "messages"), {
-            sender: currentUser, 
-            receiver: chatPartner,
+            sender: currentUser, receiver: chatPartner,
             message: type === "text" ? payload : "",
             fileData: type !== "text" ? payload : "",
-            messageType: type, 
-            timestamp: serverTimestamp()
-            // status alanı tamamen kaldırıldı! Artık her şey tarayıcı hafızasında zaman kontrolüyle çözülüyor.
+            messageType: type, timestamp: serverTimestamp(), status: initialStatus
         });
         sendEmailNotification(payload, type === "text" ? "metin" : type === "image" ? "fotoğraf" : "ses kaydı");
     } catch (e) { console.error(e); }
@@ -387,21 +396,9 @@ function handleMessageSubmit() {
     if (text) { 
         sendCustomMessage(text, "text"); 
         messageInput.value = ""; 
-        
-        // ÖNEMLİ: Yüksekliği doğrudan 40px yapmak yerine 'auto' çekiyoruz, 
-        // böylece DOM'daki ani yükseklik sıçraması klavyeyi kapatmıyor.
-        messageInput.style.height = 'auto'; 
+        messageInput.style.height = '40px'; 
     }
-
-    // Mobil cihazlarda klavyeyi ekranda kilitleyen kritik dokunuş:
-    if (messageInput) {
-        messageInput.focus();
-        // Bazı iOS ve Android tarayıcılarında odağı kaybetmemek için çift dikiş focus
-        setTimeout(() => {
-            messageInput.click(); // Sanal bir tıklama simüle ederek klavyeyi açık tutmaya zorluyoruz
-            messageInput.focus();
-        }, 10);
-    }
+    setTimeout(() => { messageInput.focus(); }, 20); 
 }
 
 if(sendBtn) {
@@ -560,18 +557,21 @@ function listenForMessages() {
 
         snapshot.forEach((docSnap) => {
             const data = docSnap.data();
+            const msgId = docSnap.id;
             const isBelongsToCurrentChat = (data.sender === currentUser && data.receiver === chatPartner) || (data.sender === chatPartner && data.receiver === currentUser);
             if (!isBelongsToCurrentChat) return;
 
-            let msgTimeMs = Date.now();
+            if (data.receiver === currentUser && data.status !== "read") {
+                updateDoc(doc(db, "messages", msgId), { status: "read" });
+            }
+
             let timeString = "00:00";
             let currentMessageDateString = "";
 
             if (data.timestamp) {
                 const date = data.timestamp.toDate();
-                msgTimeMs = date.getTime();
                 timeString = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-                currentMessageDateString = formatSmartDate(msgTimeMs);
+                currentMessageDateString = formatSmartDate(date.getTime());
             } else {
                 currentMessageDateString = formatSmartDate(Date.now());
             }
@@ -596,17 +596,11 @@ function listenForMessages() {
             else if (data.messageType === "audio") contentBody = `<audio src="${data.fileData}" controls class="w-[180px] h-8"></audio>`;
             else contentBody = `<p class="break-words max-w-[65vw] md:max-w-md whitespace-pre-wrap">${data.message}</p>`;
 
-            // OPTİMİZASYON 2: 0 Writes (Yazma Maliyetsiz) Mavi Tık Mantığı
-            // Mesajın zamanı, partnerin presence'ındaki lastReadTime'dan küçükse çift mavi tık basılır.
             let statusTick = "";
             if (isMe) {
-                if (partnerLastReadTime > 0 && msgTimeMs <= partnerLastReadTime) {
-                    statusTick = `<span class="text-sky-500 ml-1">✓✓</span>`; // Okundu (Mavi Tık)
-                } else if (isPartnerOnline) {
-                    statusTick = `<span class="text-gray-400 ml-1">✓✓</span>`; // İletildi (Gri Çift Tık)
-                } else {
-                    statusTick = `<span class="text-gray-400 ml-1">✓</span>`; // Gönderildi (Tek Tık)
-                }
+                if (data.status === "read") statusTick = `<span class="text-sky-500 ml-1">✓✓</span>`;
+                else if (data.status === "delivered") statusTick = `<span class="text-gray-400 ml-1">✓✓</span>`;
+                else statusTick = `<span class="text-gray-400 ml-1">✓</span>`;
             }
 
             const messageHtml = `
@@ -628,25 +622,14 @@ window.addEventListener("resize", () => {
     }
 });
 
-if(messageInput) {
-    messageInput.addEventListener("keydown", (e) => {
-        // Dokunmatik ekran ve mobil tarayıcı tespiti
-        const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-        
-        if (e.key === "Enter") {
-            if (isMobile) {
-                // TELEFONLAR: Enter tuşu normalde ne yapıyorsa (alt satıra geçmek) onu yapmaya devam eder
-                return; 
-            } else {
-                // BİLGİSAYARLAR:
-                if (!e.shiftKey) {
-                    // Eğer Shift tuşuna basılmıyorsa: Mesajı gönder
-                    e.preventDefault(); // Varsayılan alt satıra geçme eylemini engelle
-                    handleMessageSubmit(); // Mesajı gönderen fonksiyonu tetikle
-                }
-                // Eğer Shift + Enter yapılıyorsa: Hiçbir şeyi engelleme, tarayıcı doğal olarak alt satıra geçsin
+if (messageInput) {
+    messageInput.addEventListener("focus", () => {
+        setTimeout(() => {
+            if (messagesContainer) {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
-        }
+            window.scrollTo(0, 0);
+        }, 150);
     });
 }
 
