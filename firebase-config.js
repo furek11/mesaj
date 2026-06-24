@@ -4,7 +4,7 @@ import { getFirestore } from "https://www.gstatic.com/firebasejs/10.8.0/firebase
 // ==========================================
 // 🛠️ MANUEL SUNUCU SEÇİMİ AYARI
 // 1 yazarsan 1. Hesap, 2 yazarsan 2. Hesap aktif olur.
-const MANUEL_DEPO_SECIMI = 1; 
+const MANUEL_DEPO_SECIMI = 2; 
 // ==========================================
 
 const firebaseAccounts = [
