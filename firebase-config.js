@@ -1,7 +1,12 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-// Tüm hesapları tek bir dizi (array) içinde topladık, isim çakışması önlendi.
+// ==========================================
+// 🛠️ MANUEL SUNUCU SEÇİMİ AYARI
+// 1 yazarsan 1. Hesap, 2 yazarsan 2. Hesap aktif olur.
+const MANUEL_DEPO_SECIMI = 1; 
+// ==========================================
+
 const firebaseAccounts = [
   {
     name: "Ana Sunucu (Hesap 1)",
@@ -21,12 +26,15 @@ const firebaseAccounts = [
     messagingSenderId: "9575430594",
     appId: "1:9575430594:web:d651b89509c9437444be5b"
   }
-  // İleride 3. bir hesap açarsan virgül koyup buraya ekleyebilirsin!
 ];
 
 export let db;
 let currentApp;
-let currentAccountIndex = 0; // İlk başta 0. indeksteki (Hesap 1) aktif olur.
+
+// Seçimi dizi indeksine dönüştürüyoruz (Kullanıcı 1 seçerse 0. indekse bakar)
+let currentAccountIndex = (MANUEL_DEPO_SECIMI >= 1 && MANUEL_DEPO_SECIMI <= firebaseAccounts.length) 
+    ? MANUEL_DEPO_SECIMI - 1 
+    : 0;
 
 function connectToFirebase(config) {
     console.log(`📡 ${config.name} sunucusuna bağlanılıyor...`);
@@ -34,14 +42,12 @@ function connectToFirebase(config) {
     db = getFirestore(currentApp);
 }
 
-// İlk açılışta 1. hesap (0. indeks) ile başla
+// Belirlediğin manuel hesapla başlatılıyor
 connectToFirebase(firebaseAccounts[currentAccountIndex]);
 
-// Kota dolduğunda app.js tarafından tetiklenecek vites değiştirme motoru
 export function switchDatabaseAccount() {
     currentAccountIndex++;
 
-    // Eğer eldeki tüm hesaplar bittiyse koruma amaçlı ilk hesaba geri dön
     if (currentAccountIndex >= firebaseAccounts.length) {
         console.error("❌ Tüm yedek depoların kotası tükendi! Başka hesap kalmadı.");
         currentAccountIndex = 0; 
