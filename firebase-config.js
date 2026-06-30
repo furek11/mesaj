@@ -4,7 +4,7 @@ import { getFirestore } from "https://www.gstatic.com/firebasejs/10.8.0/firebase
 // ==========================================
 // 🛠️ MANUEL SUNUCU SEÇİMİ AYARI
 // Hangi sunucudan başlamasını istiyorsan o numarayı yaz (1, 2 veya 3)
-const MANUEL_DEPO_SECIMI = 3; 
+const MANUEL_DEPO_SECIMI = 1; 
 // ==========================================
 
 const firebaseAccounts = [
