@@ -3,8 +3,8 @@ import { getFirestore } from "https://www.gstatic.com/firebasejs/10.8.0/firebase
 
 // ==========================================
 // 🛠️ MANUEL SUNUCU SEÇİMİ AYARI
-// Hangi sunucudan başlamasını istiyorsan o numarayı yaz (1, 2 veya 3)
-const MANUEL_DEPO_SECIMI = 3; 
+// Hangi sunucudan başlamasını istiyorsan o numarayı yaz (1, 2, 3 veya 4)
+const MANUEL_DEPO_SECIMI = 4; 
 // ==========================================
 
 const firebaseAccounts = [
@@ -26,7 +26,6 @@ const firebaseAccounts = [
     messagingSenderId: "9575430594",
     appId: "1:9575430594:web:d651b89509c9437444be5b"
   },
-  // 👇 YENİ EKLEDİĞİMİZ 3. HESAP TAM OLARAK BURADA
   {
     name: "Yedek Sunucu 2 (Hesap 3)",
     apiKey: "AIzaSyB4n4hp8RD39NL5rE3OnCc02ygChkIkYhQ",
@@ -35,6 +34,16 @@ const firebaseAccounts = [
     storageBucket: "ozel-wp-klon1.firebasestorage.app",
     messagingSenderId: "467098321527",
     appId: "1:467098321527:web:8a93a16751a967e9757c72"
+  },
+  // 👇 İŞTE YENİ EKLEDİĞİMİZ 4. HESAP TAM OLARAK BURADA
+  {
+    name: "Yedek Sunucu 3 (Hesap 4)",
+    apiKey: "AIzaSyDmy-5wq9FvzORSAy3IJCtwcIYmy0nbkWM",
+    authDomain: "ozel-wp-klon2.firebaseapp.com",
+    projectId: "ozel-wp-klon2",
+    storageBucket: "ozel-wp-klon2.firebasestorage.app",
+    messagingSenderId: "784124577504",
+    appId: "1:784124577504:web:837c7a181e972bf3bab285"
   }
 ];
 
@@ -51,14 +60,14 @@ function connectToFirebase(config) {
     db = getFirestore(currentApp);
 }
 
-// Seçilen sunucuyla başlat
+// Seçilen sunucuyla sistemi başlat
 connectToFirebase(firebaseAccounts[currentAccountIndex]);
 
-// Kota dolduğunda sırayla kaydıran fonksiyon
+// Kota dolduğunda sırayla kaydıran otomatik vites fonksiyonu
 export function switchDatabaseAccount() {
     currentAccountIndex++;
 
-    // Eğer 3. hesap da dolarsa otomatik olarak 1. hesaba geri döner
+    // Eğer 4. hesap da dolarsa otomatik olarak en baştaki 1. hesaba geri döner
     if (currentAccountIndex >= firebaseAccounts.length) {
         console.error("❌ Tüm yedek depoların kotası tükendi! Başka hesap kalmadı.");
         currentAccountIndex = 0; 
