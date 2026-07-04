@@ -1,7 +1,7 @@
 import { db, switchDatabaseAccount } from "./firebase-config.js";
 import { 
     collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, 
-    doc, setDoc, updateDoc, where, getDocs, deleteDoc // 🛠️ deleteDoc eklendi
+    doc, setDoc, updateDoc, where, getDocs
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // === EMAILJS CONFIG ===
@@ -191,63 +191,6 @@ if(messageInput) {
     messageInput.addEventListener('input', autoResizeTextArea);
 }
 
-// MESAJ SİLME MOTORU (4 Saniye Basılı Tutma Kontrolü)
-// MESAJ SİLME MOTORU (Geliştirilmiş & Engellemesiz 4 Saniye Kontrolü)
-window.setupMessageDeleteListener = function(element, msgId, isMe) {
-    if (!isMe) return; 
-
-    let pressTimer = null;
-
-    // Tarayıcının varsayılan seçme ve sağ tık menülerini devre dışı bırakıyoruz
-    element.style.webkitUserSelect = "none";
-    element.style.userSelect = "none";
-    element.style.webkitTouchCallout = "none";
-
-    const startPress = (e) => {
-        // Çift tıklama veya kaydırma hareketlerinde tetiklenmeyi önlemek için güvenli başlangıç
-        element.style.transition = "opacity 4s linear";
-        element.style.opacity = "0.3"; 
-        
-        pressTimer = setTimeout(async () => {
-            const confirmDelete = confirm("Bu mesajı kalıcı olarak herkesten silmek istiyor musunuz?");
-            if (confirmDelete) {
-                try {
-                    await deleteDoc(doc(db, "messages", msgId));
-                    console.log("Mesaj silindi:", msgId);
-                } catch (e) {
-                    handleQuotaError(e, () => deleteDoc(doc(db, "messages", msgId)));
-                }
-            } else {
-                cancelPress();
-            }
-        }, 4000);
-    };
-
-    const cancelPress = () => {
-        clearTimeout(pressTimer);
-        element.style.transition = "opacity 0.2s ease";
-        element.style.opacity = "1"; 
-    };
-
-    // Masaüstü için
-    element.addEventListener("mousedown", startPress);
-    element.addEventListener("mouseup", cancelPress);
-    element.addEventListener("mouseleave", cancelPress);
-
-    // Mobil için (Uzun basmada sağ tık menüsünü engelliyoruz)
-    element.addEventListener("touchstart", (e) => {
-        startPress(e);
-    }, { passive: true });
-    
-    element.addEventListener("touchend", cancelPress, { passive: true });
-    element.addEventListener("touchcancel", cancelPress, { passive: true });
-    
-    // Tarayıcının kendi menüsünün açılmasını engelleme (En önemlisi)
-    element.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-    });
-};
-
 function formatSmartDate(timestampMs) {
     const messageDate = new Date(timestampMs);
     const today = new Date();
@@ -340,7 +283,7 @@ window.openChatArea = function() {
 };
 
 window.closeChatArea = function() {
-    if (sidebarArea) sidebarArea.remove("hidden");
+    if (sidebarArea) sidebarArea.classList.remove("hidden");
     if (chatArea) {
         chatArea.classList.add("hidden", "md:flex");
         chatArea.classList.remove("flex", "w-full");
@@ -683,22 +626,13 @@ function listenForMessages() {
                 else statusTick = `<span class="text-gray-400 ml-1">✓</span>`;
             }
 
-            // Benzersiz ID ataması yapıyoruz (Silme motoru için seçici olacak)
-            const uniqueMsgElementId = `msg-${msgId}`;
-
             const messageHtml = `
-                <div id="${uniqueMsgElementId}" class="flex flex-col ${isMe ? 'self-end cursor-pointer' : 'self-start'} p-2 px-3 shadow-sm ${messageBg} relative group select-none">
+                <div class="flex flex-col ${isMe ? 'self-end' : 'self-start'} p-2 px-3 shadow-sm ${messageBg} relative group">
                     ${contentBody}
                     <span class="text-[9px] text-gray-400 dark:text-gray-400/80 text-right mt-1 block select-none">${timeString} ${statusTick}</span>
                 </div>
             `;
             messagesContainer.insertAdjacentHTML("beforeend", messageHtml);
-
-            // DOM'a eklenen mesaja basılı tutma dinleyicisini bağlıyoruz
-            const msgElement = document.getElementById(uniqueMsgElementId);
-            if (msgElement) {
-                window.setupMessageDeleteListener(msgElement, msgId, isMe);
-            }
         });
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }, (error) => {
