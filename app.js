@@ -192,14 +192,21 @@ if(messageInput) {
 }
 
 // MESAJ SİLME MOTORU (4 Saniye Basılı Tutma Kontrolü)
+// MESAJ SİLME MOTORU (Geliştirilmiş & Engellemesiz 4 Saniye Kontrolü)
 window.setupMessageDeleteListener = function(element, msgId, isMe) {
-    if (!isMe) return; // Kullanıcı başkasının mesajını silemesin
+    if (!isMe) return; 
 
     let pressTimer = null;
 
-    const startPress = () => {
+    // Tarayıcının varsayılan seçme ve sağ tık menülerini devre dışı bırakıyoruz
+    element.style.webkitUserSelect = "none";
+    element.style.userSelect = "none";
+    element.style.webkitTouchCallout = "none";
+
+    const startPress = (e) => {
+        // Çift tıklama veya kaydırma hareketlerinde tetiklenmeyi önlemek için güvenli başlangıç
         element.style.transition = "opacity 4s linear";
-        element.style.opacity = "0.3"; // 4 saniye içinde yavaşça şeffaflaşacak
+        element.style.opacity = "0.3"; 
         
         pressTimer = setTimeout(async () => {
             const confirmDelete = confirm("Bu mesajı kalıcı olarak herkesten silmek istiyor musunuz?");
@@ -213,25 +220,32 @@ window.setupMessageDeleteListener = function(element, msgId, isMe) {
             } else {
                 cancelPress();
             }
-        }, 4000); // 4 saniye (4000 ms) basılı tutma kontrolü
+        }, 4000);
     };
 
     const cancelPress = () => {
         clearTimeout(pressTimer);
         element.style.transition = "opacity 0.2s ease";
-        element.style.opacity = "1"; // Bırakınca opaklık eski haline döner
+        element.style.opacity = "1"; 
     };
 
-    // Bilgisayar mouse olayları
+    // Masaüstü için
     element.addEventListener("mousedown", startPress);
     element.addEventListener("mouseup", cancelPress);
     element.addEventListener("mouseleave", cancelPress);
 
-    // Mobil dokunmatik ekran olayları
+    // Mobil için (Uzun basmada sağ tık menüsünü engelliyoruz)
     element.addEventListener("touchstart", (e) => {
-        startPress();
+        startPress(e);
     }, { passive: true });
+    
     element.addEventListener("touchend", cancelPress, { passive: true });
+    element.addEventListener("touchcancel", cancelPress, { passive: true });
+    
+    // Tarayıcının kendi menüsünün açılmasını engelleme (En önemlisi)
+    element.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+    });
 };
 
 function formatSmartDate(timestampMs) {
