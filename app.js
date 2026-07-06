@@ -13,6 +13,11 @@ if (typeof emailjs !== "undefined" && EMAILJS_PUBLIC_KEY !== "YOUR_PUBLIC_KEY") 
     emailjs.init(EMAILJS_PUBLIC_KEY);
 }
 
+// === CLOUDINARY CONFIG ===
+const CLOUDINARY_CLOUD_NAME = "kmnkotv7";
+const CLOUDINARY_UPLOAD_PRESET = "chat_secure_preset"; 
+const CLOUDINARY_API_KEY = "523656588757819";
+
 let currentUser = "";
 let chatPartner = "";
 let typingTimeout = null;
@@ -151,10 +156,9 @@ if (modalCloseBtn) {
 if (modalDownloadBtn) {
     modalDownloadBtn.addEventListener("click", () => {
         if (!modalPreviewImg || !modalPreviewImg.src) return;
-        const base64Data = modalPreviewImg.src;
-        
         const link = document.createElement("a");
-        link.href = base64Data;
+        link.href = modalPreviewImg.src;
+        link.target = "_blank";
         link.download = `chat_image_${Date.now()}.jpg`;
         document.body.appendChild(link);
         link.click();
@@ -373,7 +377,7 @@ function setupTypingListener() {
             await updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: true });
             clearTimeout(typingTimeout);
             typingTimeout = setTimeout(async () => {
-                try { await updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false }); } catch(e) { handleQuotaError(e); }
+                try { updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false }); } catch(e) { handleQuotaError(e); }
             }, 1500);
         } catch(e) {
             handleQuotaError(e, () => { updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: true }); });
@@ -396,13 +400,38 @@ async function sendCustomMessage(payload, type = "text") {
     try {
         if(currentUser) await updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false });
         const initialStatus = isPartnerOnline ? "delivered" : "sent";
+        
+        let finalData = payload;
+
+        if (type === "image" || type === "audio") {
+            console.log(`🚀 Orijinal kalitede ${type} Cloudinary'ye güvenli (private) yükleniyor...`);
+            
+            const formData = new FormData();
+            formData.append("file", payload);
+            formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+
+            const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`, {
+                method: "POST",
+                body: formData
+            });
+
+            const result = await response.json();
+            
+            if (result.secure_url) {
+                finalData = result.secure_url;
+                console.log(`✅ Cloudinary Yüklemesi Başarılı (${type}):`, finalData);
+            } else {
+                throw new Error("Cloudinary yükleme hatası: " + (result.error?.message || "Bilinmeyen hata"));
+            }
+        }
+
         await addDoc(collection(db, "messages"), {
             sender: currentUser, receiver: chatPartner,
-            message: type === "text" ? payload : "",
-            fileData: type !== "text" ? payload : "",
+            message: type === "text" ? finalData : "",
+            fileData: type !== "text" ? finalData : "",
             messageType: type, timestamp: serverTimestamp(), status: initialStatus
         });
-        sendEmailNotification(payload, type === "text" ? "metin" : type === "image" ? "fotoğraf" : "ses kaydı");
+        sendEmailNotification(type === "text" ? finalData : `Sana bir ${type === "image" ? "fotoğraf" : "ses kaydı"} gönderdi.`, type === "text" ? "metin" : type === "image" ? "fotoğraf" : "ses kaydı");
     } catch (e) { 
         const handled = await handleQuotaError(e, sendCustomMessage, payload, type);
         if(!handled) console.error(e);
@@ -446,51 +475,15 @@ if(fileInput) {
         const file = e.target.files[0];
         if (!file) return;
 
-        if (!file.type.startsWith("image/")) {
+        if (file.type.startsWith("image/")) {
+            sendCustomMessage(file, "image");
+        } else {
             const reader = new FileReader();
             reader.onload = function(event) {
                 sendCustomMessage(event.target.result, "file");
             };
             reader.readAsDataURL(file);
-            fileInput.value = "";
-            return;
         }
-
-        const reader = new FileReader();
-        reader.onload = function(event) {
-            const img = new Image();
-            img.src = event.target.result;
-            
-            img.onload = function() {
-                const canvas = document.createElement("canvas");
-                const ctx = canvas.getContext("2d");
-
-                const MAX_WIDTH = 800;
-                const MAX_HEIGHT = 800;
-                let width = img.width;
-                let height = img.height;
-
-                if (width > height) {
-                    if (width > MAX_WIDTH) {
-                        height *= MAX_WIDTH / width;
-                        width = MAX_WIDTH;
-                    }
-                } else {
-                    if (height > MAX_HEIGHT) {
-                        width *= MAX_HEIGHT / height;
-                        height = MAX_HEIGHT;
-                    }
-                }
-
-                canvas.width = width;
-                canvas.height = height;
-                ctx.drawImage(img, 0, 0, width, height);
-
-                const compressedBase64 = canvas.toDataURL("image/jpeg", 0.50);
-                sendCustomMessage(compressedBase64, "image");
-            };
-        };
-        reader.readAsDataURL(file);
         fileInput.value = ""; 
     });
 }
@@ -513,9 +506,7 @@ async function startVoiceRecording() {
             }
 
             const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            const reader = new FileReader();
-            reader.onloadend = () => { sendCustomMessage(reader.result, "audio"); };
-            reader.readAsDataURL(audioBlob);
+            sendCustomMessage(audioBlob, "audio");
             
             resetVoiceUI();
             if (activeStream) { activeStream.getTracks().forEach(track => track.stop()); activeStream = null; }
