@@ -403,14 +403,19 @@ async function sendCustomMessage(payload, type = "text") {
         
         let finalData = payload;
 
-        if (type === "image" || type === "audio") {
+        if (type === "image" || type === "audio" || type === "video") {
             console.log(`🚀 Orijinal kalitede ${type} Cloudinary'ye güvenli (private) yükleniyor...`);
             
             const formData = new FormData();
             formData.append("file", payload);
             formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
 
-            const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`, {
+            let resourceType = "image";
+            if (type === "audio" || type === "video") {
+                resourceType = "video";
+            }
+
+            const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`, {
                 method: "POST",
                 body: formData
             });
