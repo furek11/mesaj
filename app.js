@@ -480,9 +480,20 @@ if(fileInput) {
         const file = e.target.files[0];
         if (!file) return;
 
+        // Dosya türünü tespit ediyoruz
         if (file.type.startsWith("image/")) {
             sendCustomMessage(file, "image");
+        } else if (file.type.startsWith("audio/")) {
+            sendCustomMessage(file, "audio");
+        } else if (file.type.startsWith("video/")) {
+            sendCustomMessage(file, "video");
         } else {
+            // Diğer döküman vb. dosyalar için (Eğer 1MB'dan küçükse Firebase'e, değilse hata vermemesi için)
+            if (file.size > 1000000) {
+                alert("Bu dosya türü için 1 MB boyut sınırı vardır. Lütfen resim, ses veya video yükleyin.");
+                fileInput.value = "";
+                return;
+            }
             const reader = new FileReader();
             reader.onload = function(event) {
                 sendCustomMessage(event.target.result, "file");
