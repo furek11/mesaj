@@ -480,7 +480,7 @@ if(fileInput) {
         const file = e.target.files[0];
         if (!file) return;
 
-        // Dosya türünü tespit ediyoruz
+        // Dosya türünü tespit edip Cloudinary veya kısıtlı Base64'e yönlendiriyoruz
         if (file.type.startsWith("image/")) {
             sendCustomMessage(file, "image");
         } else if (file.type.startsWith("audio/")) {
@@ -488,7 +488,6 @@ if(fileInput) {
         } else if (file.type.startsWith("video/")) {
             sendCustomMessage(file, "video");
         } else {
-            // Diğer döküman vb. dosyalar için (Eğer 1MB'dan küçükse Firebase'e, değilse hata vermemesi için)
             if (file.size > 1000000) {
                 alert("Bu dosya türü için 1 MB boyut sınırı vardır. Lütfen resim, ses veya video yükleyin.");
                 fileInput.value = "";
@@ -622,9 +621,26 @@ function listenForMessages() {
             let messageBg = isMe ? "bg-[#d9fdd3] dark:bg-emerald-900/40 text-gray-800 dark:text-gray-100 self-end rounded-l-xl rounded-br-xl" : "bg-white dark:bg-zinc-700 text-gray-800 dark:text-gray-100 self-start rounded-r-xl rounded-bl-xl";
             
             let contentBody = "";
-            if (data.messageType === "image") contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] object-cover shadow-sm cursor-pointer hover:opacity-95 transition" onclick="window.openImagePreview(this.src)">`;
-            else if (data.messageType === "audio") contentBody = `<audio src="${data.fileData}" controls class="w-[180px] h-8"></audio>`;
-            else contentBody = `<p class="break-words max-w-[65vw] md:max-w-md whitespace-pre-wrap">${data.message}</p>`;
+            if (data.messageType === "image") {
+                contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] object-cover shadow-sm cursor-pointer hover:opacity-95 transition" onclick="window.openImagePreview(this.src)">`;
+            } else if (data.messageType === "audio") {
+                contentBody = `<audio src="${data.fileData}" controls class="w-[180px] h-8"></audio>`;
+            } else if (data.messageType === "video") {
+                // 🎥 Büyük videoların arayüzü ve kotayı bozmaması için tıklanabilir link butonunu entegre ettik
+                contentBody = `
+                    <div class="flex flex-col gap-2 p-1">
+                        <div class="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-medium text-xs select-none">
+                            <i class="fa-solid fa-video text-sm animate-pulse"></i> Yeni Video Dosyası
+                        </div>
+                        <a href="${data.fileData}" target="_blank" rel="noopener noreferrer" 
+                           class="inline-flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-900 text-white dark:bg-zinc-200 dark:hover:bg-zinc-100 dark:text-zinc-900 text-xs font-semibold px-3 py-2 rounded-lg transition shadow-sm text-decoration-none">
+                            <i class="fa-solid fa-arrow-up-right-from-square"></i> Videoyu İzle / İndir
+                        </a>
+                    </div>
+                `;
+            } else {
+                contentBody = `<p class="break-words max-w-[65vw] md:max-w-md whitespace-pre-wrap">${data.message}</p>`;
+            }
 
             let statusTick = "";
             if (isMe) {
