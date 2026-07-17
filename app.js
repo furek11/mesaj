@@ -25,7 +25,7 @@ let isPartnerOnline = false;
 let partnerLastActive = 0; 
 let heartbeatInterval = null;
 let messagesUnsubscribe = null; 
-let lastSnapshotCache = null; // Aktiflik değiştiğinde mesajları yerel hafızadan render etmek için önbellek
+let lastSnapshotCache = null; 
 
 let mediaRecorder = null;
 let audioChunks = [];
@@ -39,7 +39,8 @@ let voiceTimerInterval = null;
 let isUserScrolledUp = false;
 let currentMessageLimit = 40; 
 let isPaginationLoading = false;
-let incomingUnreadCount = 0; // Kaybolan sayaç geri geldi!
+let incomingUnreadCount = 0; 
+let localRenderedMessageIds = new Set(); // Aynı mesajların tekrar sayılmasını engellemek için benzersiz ID takibi
 
 const loginScreen = document.getElementById("login-screen");
 const chatScreen = document.getElementById("chat-screen");
@@ -285,6 +286,7 @@ window.selectUser = function(user) {
 
     currentMessageLimit = 40; 
     incomingUnreadCount = 0;
+    localRenderedMessageIds.clear();
 
     if (window.innerWidth > 768) {
         if (chatArea) { chatArea.classList.remove("hidden"); chatArea.classList.add("flex"); }
@@ -335,7 +337,7 @@ function listenPartnerPresence() {
                 if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-gray-400 rounded-full";
             }
 
-            // 🛠️ ÇÖZÜM 1: Karşı taraf online olduğunda veya durumu değiştiğinde yereldeki verileri anında yeniden render et!
+            // 🛠️ ÇÖZÜM 1: Aktiflik değiştiğinde tikleri tam zamanlı yenile
             if (lastSnapshotCache && messagesContainer) {
                 renderMessagesHTML(lastSnapshotCache);
             }
@@ -379,11 +381,13 @@ async function sendCustomMessage(payload, type = "text") {
             else throw new Error("Cloudinary yükleme hatası");
         }
 
+        // Yerel zaman damgası ekliyoruz ki sunucudan cevap gelene dek tikler çökmesiniz (0 write mantığı)
         await addDoc(collection(db, "messages"), {
             sender: currentUser, receiver: chatPartner,
             message: type === "text" ? finalData : "",
             fileData: type !== "text" ? finalData : "",
-            messageType: type, timestamp: serverTimestamp()
+            messageType: type, timestamp: serverTimestamp(),
+            localCreatedAt: Date.now() 
         });
         sendEmailNotification(type === "text" ? finalData : `Sana bir ${type === "image" ? "fotoğraf" : "ses kaydı"} gönderdi.`, type === "text" ? "metin" : type);
     } catch (e) { handleQuotaError(e, sendCustomMessage, payload, type); }
@@ -452,12 +456,13 @@ function setupScrollTracking() {
             isUserScrolledUp = false;
             incomingUnreadCount = 0;
             currentMessageLimit = 40;
+            localRenderedMessageIds.clear(); // Sıfırlamada seti temizle
             if (unreadBadge) unreadBadge.classList.add("hidden");
             listenForMessages();
 
             setTimeout(() => {
-                if (messagesContainer) messagesContainer.scrollTo({ top: messagesContainer.scrollHeight, behavior: 'smooth' });
-            }, 100);
+                if (messagesContainer) messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }, 120);
             if (scrollToBottomBtn) scrollToBottomBtn.classList.add("hidden");
         });
     }
@@ -474,22 +479,25 @@ function listenForMessages() {
         const oldScrollHeight = messagesContainer.scrollHeight;
         const wasAtBottomBeforeRender = !isUserScrolledUp;
 
-        // 🛠️ ÇÖZÜM 2: Gelen yeni mesajları yakalayıp +1, +2 şeklinde sayacı tetikleme mimarisi
+        // 🛠️ ÇÖZÜM 2: Pagination çakışmasız, tamamen stabil +1, +2 sayaç sistemi
         snapshot.docChanges().forEach((change) => {
             if (change.type === "added") {
+                const msgId = change.doc.id;
                 const newMsg = change.doc.data();
-                if (newMsg.receiver === currentUser && newMsg.sender === chatPartner) {
-                    if (isUserScrolledUp) {
+                
+                // Eğer mesajı daha önce listeye eklemediysek ve kullanıcı yukarıdaysa sayacı artır
+                if (!localRenderedMessageIds.has(msgId)) {
+                    if (newMsg.receiver === currentUser && newMsg.sender === chatPartner && isUserScrolledUp) {
                         incomingUnreadCount++;
                     }
                 }
             }
         });
 
-        // Gelen veriyi önbelleğe kaydediyoruz (Aktiflik durumunda kullanmak üzere)
-        lastSnapshotCache = snapshot;
+        // Mevcut snapshot'taki tüm ID'leri kaydet
+        snapshot.forEach(d => localRenderedMessageIds.add(d.id));
 
-        // Ekrana basma işlemini çalıştır
+        lastSnapshotCache = snapshot;
         renderMessagesHTML(snapshot);
 
         if (isPaginationLoading) {
@@ -498,20 +506,25 @@ function listenForMessages() {
             isPaginationLoading = false;
         } else if (wasAtBottomBeforeRender) {
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        } else {
-            // 🛠️ Sayaç görünürlüğünü güncelle
-            if (scrollToBottomBtn && unreadBadge && incomingUnreadCount > 0) {
+        } 
+        
+        // 🛠️ Sayaç balonunun görünürlük durumunu güncelle
+        if (isUserScrolledUp && incomingUnreadCount > 0) {
+            if (unreadBadge) {
                 unreadBadge.textContent = `+${incomingUnreadCount}`;
                 unreadBadge.classList.remove("hidden");
             }
+        } else {
+            if (unreadBadge) unreadBadge.classList.add("hidden");
         }
+
     }, (error) => {
         handleQuotaError(error, () => { listenForMessages(); });
     });
 }
 
-// HTML'e Mesajları Çizen Yardımcı Fonksiyon (Kod tekrarını engeller ve anlık tik tazelemeyi sağlar)
 function renderMessagesHTML(snapshot) {
+    if (!messagesContainer) return;
     messagesContainer.innerHTML = "";
     let lastDisplayedDateString = ""; 
 
@@ -522,7 +535,9 @@ function renderMessagesHTML(snapshot) {
 
         let timeString = "00:00";
         let currentMessageDateString = "";
-        let msgTimeMs = Date.now();
+        
+        // 🛠️ ÇÖZÜM 1: Yeni mesaj atıldığında `timestamp` null gelse bile `localCreatedAt` kullanarak çökme ve tik donması engellendi
+        let msgTimeMs = data.localCreatedAt || Date.now();
 
         if (data.timestamp) {
             const date = data.timestamp.toDate();
@@ -530,7 +545,9 @@ function renderMessagesHTML(snapshot) {
             timeString = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
             currentMessageDateString = formatSmartDate(msgTimeMs);
         } else {
-            currentMessageDateString = formatSmartDate(Date.now());
+            const fallbackDate = new Date(msgTimeMs);
+            timeString = `${String(fallbackDate.getHours()).padStart(2, '0')}:${String(fallbackDate.getMinutes()).padStart(2, '0')}`;
+            currentMessageDateString = formatSmartDate(msgTimeMs);
         }
 
         if (currentMessageDateString !== lastDisplayedDateString) {
@@ -561,7 +578,7 @@ function renderMessagesHTML(snapshot) {
 
         let statusTick = "";
         if (isMe) {
-            // MÜKEMMEL WHİLE / DİNAMİK TİK SİSTEMİ (Artık varlık tablosundaki değişimlerle de tetikleniyor)
+            // Anlık aktiflik veya geçmiş görülme eşleşme kontrolü
             if (isPartnerOnline || partnerLastActive > msgTimeMs) {
                 statusTick = `<span class="text-sky-500 ml-1">✓✓</span>`;
             } else {
