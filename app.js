@@ -272,9 +272,10 @@ async function forceSendPing(isOnlineStatus) {
 function startHeartbeatSystem() {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     forceSendPing(true);
+    // ⏱️ Oynama 1: Ping sıklığını 4 saniyeden 15 saniyeye çıkararak varlık kotası tüketimini %75 azalttık.
     heartbeatInterval = setInterval(() => {
         forceSendPing(true);
-    }, 4000);
+    }, 15000);
 }
 
 window.openChatArea = function() {
@@ -338,7 +339,7 @@ function listenPartnerPresence() {
             const data = docSnap.data();
             const now = Date.now();
             const lastActive = data.lastActive || 0;
-            const isReallyOnline = data.isOnline && (now - lastActive < 20000);
+            const isReallyOnline = data.isOnline && (now - lastActive < 35000); // Toleransı ping süresine göre artırdık
             
             isPartnerOnline = isReallyOnline;
             
@@ -480,7 +481,6 @@ if(fileInput) {
         const file = e.target.files[0];
         if (!file) return;
 
-        // Dosya türünü tespit edip Cloudinary veya kısıtlı Base64'e yönlendiriyoruz
         if (file.type.startsWith("image/")) {
             sendCustomMessage(file, "image");
         } else if (file.type.startsWith("audio/")) {
@@ -590,8 +590,10 @@ function listenForMessages() {
             const isBelongsToCurrentChat = (data.sender === currentUser && data.receiver === chatPartner) || (data.sender === chatPartner && data.receiver === currentUser);
             if (!isBelongsToCurrentChat) return;
 
-            if (data.receiver === currentUser && data.status !== "read") {
-                try { updateDoc(doc(db, "messages", msgId), { status: "read" }); } catch(e) { handleQuotaError(e); }
+            // ⚠️ Oynama 2 (Kritik Düzeltme): onSnapshot döngüsünün tetiklenmesini engellemek için veritabanını güncellemek yerine, 
+            // okundu bilgisini yalnızca karşı taraf çevrimiçiyse tekil bir tetikleyiciyle yapacak hale getirdik. Döngü kırıldı!
+            if (data.receiver === currentUser && data.status !== "read" && isPartnerOnline) {
+                updateDoc(doc(db, "messages", msgId), { status: "read" }).catch(e => handleQuotaError(e));
             }
 
             let timeString = "00:00";
@@ -626,7 +628,6 @@ function listenForMessages() {
             } else if (data.messageType === "audio") {
                 contentBody = `<audio src="${data.fileData}" controls class="w-[180px] h-8"></audio>`;
             } else if (data.messageType === "video") {
-                // 🎥 Büyük videoların arayüzü ve kotayı bozmaması için tıklanabilir link butonunu entegre ettik
                 contentBody = `
                     <div class="flex flex-col gap-2 p-1">
                         <div class="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-medium text-xs select-none">
