@@ -39,8 +39,6 @@ let voiceTimerInterval = null;
 let isUserScrolledUp = false;
 let currentMessageLimit = 40; 
 let isPaginationLoading = false;
-let incomingUnreadCount = 0; 
-let localRenderedMessageIds = new Set(); // Aynı mesajların tekrar sayılmasını engellemek için benzersiz ID takibi
 
 const loginScreen = document.getElementById("login-screen");
 const chatScreen = document.getElementById("chat-screen");
@@ -74,7 +72,6 @@ const modalPreviewImg = document.getElementById("modal-preview-img");
 const modalCloseBtn = document.getElementById("modal-close-btn");
 
 const scrollToBottomBtn = document.getElementById("scroll-to-bottom-btn");
-const unreadBadge = document.getElementById("unread-badge");
 
 async function handleQuotaError(error, retryFunction, ...args) {
     if (error && (error.code === 'resource-exhausted' || error.message?.includes('quota') || error.message?.includes('exhausted'))) {
@@ -259,8 +256,6 @@ window.openChatArea = function() {
         chatArea.classList.remove("hidden", "md:flex");
         chatArea.classList.add("flex", "w-full");
     }
-    incomingUnreadCount = 0;
-    if (unreadBadge) unreadBadge.classList.add("hidden");
     setTimeout(() => { if(messagesContainer && !isUserScrolledUp) messagesContainer.scrollTop = messagesContainer.scrollHeight; }, 150);
 };
 
@@ -285,8 +280,6 @@ window.selectUser = function(user) {
     if(chatScreen) chatScreen.classList.remove("hidden");
 
     currentMessageLimit = 40; 
-    incomingUnreadCount = 0;
-    localRenderedMessageIds.clear();
 
     if (window.innerWidth > 768) {
         if (chatArea) { chatArea.classList.remove("hidden"); chatArea.classList.add("flex"); }
@@ -337,7 +330,6 @@ function listenPartnerPresence() {
                 if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-gray-400 rounded-full";
             }
 
-            // 🛠️ ÇÖZÜM 1: Aktiflik değiştiğinde tikleri tam zamanlı yenile
             if (lastSnapshotCache && messagesContainer) {
                 renderMessagesHTML(lastSnapshotCache);
             }
@@ -381,7 +373,6 @@ async function sendCustomMessage(payload, type = "text") {
             else throw new Error("Cloudinary yükleme hatası");
         }
 
-        // Yerel zaman damgası ekliyoruz ki sunucudan cevap gelene dek tikler çökmesiniz (0 write mantığı)
         await addDoc(collection(db, "messages"), {
             sender: currentUser, receiver: chatPartner,
             message: type === "text" ? finalData : "",
@@ -445,19 +436,14 @@ function setupScrollTracking() {
             if (scrollToBottomBtn) scrollToBottomBtn.classList.remove("hidden");
         } else {
             isUserScrolledUp = false;
-            incomingUnreadCount = 0; 
             if (scrollToBottomBtn) scrollToBottomBtn.classList.add("hidden");
-            if (unreadBadge) unreadBadge.classList.add("hidden");
         }
     });
 
     if (scrollToBottomBtn) {
         scrollToBottomBtn.addEventListener("click", () => {
             isUserScrolledUp = false;
-            incomingUnreadCount = 0;
             currentMessageLimit = 40;
-            localRenderedMessageIds.clear(); // Sıfırlamada seti temizle
-            if (unreadBadge) unreadBadge.classList.add("hidden");
             listenForMessages();
 
             setTimeout(() => {
@@ -479,24 +465,6 @@ function listenForMessages() {
         const oldScrollHeight = messagesContainer.scrollHeight;
         const wasAtBottomBeforeRender = !isUserScrolledUp;
 
-        // 🛠️ ÇÖZÜM 2: Pagination çakışmasız, tamamen stabil +1, +2 sayaç sistemi
-        snapshot.docChanges().forEach((change) => {
-            if (change.type === "added") {
-                const msgId = change.doc.id;
-                const newMsg = change.doc.data();
-                
-                // Eğer mesajı daha önce listeye eklemediysek ve kullanıcı yukarıdaysa sayacı artır
-                if (!localRenderedMessageIds.has(msgId)) {
-                    if (newMsg.receiver === currentUser && newMsg.sender === chatPartner && isUserScrolledUp) {
-                        incomingUnreadCount++;
-                    }
-                }
-            }
-        });
-
-        // Mevcut snapshot'taki tüm ID'leri kaydet
-        snapshot.forEach(d => localRenderedMessageIds.add(d.id));
-
         lastSnapshotCache = snapshot;
         renderMessagesHTML(snapshot);
 
@@ -507,17 +475,6 @@ function listenForMessages() {
         } else if (wasAtBottomBeforeRender) {
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         } 
-        
-        // 🛠️ Sayaç balonunun görünürlük durumunu güncelle
-        if (isUserScrolledUp && incomingUnreadCount > 0) {
-            if (unreadBadge) {
-                unreadBadge.textContent = `+${incomingUnreadCount}`;
-                unreadBadge.classList.remove("hidden");
-            }
-        } else {
-            if (unreadBadge) unreadBadge.classList.add("hidden");
-        }
-
     }, (error) => {
         handleQuotaError(error, () => { listenForMessages(); });
     });
@@ -536,7 +493,6 @@ function renderMessagesHTML(snapshot) {
         let timeString = "00:00";
         let currentMessageDateString = "";
         
-        // 🛠️ ÇÖZÜM 1: Yeni mesaj atıldığında `timestamp` null gelse bile `localCreatedAt` kullanarak çökme ve tik donması engellendi
         let msgTimeMs = data.localCreatedAt || Date.now();
 
         if (data.timestamp) {
@@ -578,7 +534,6 @@ function renderMessagesHTML(snapshot) {
 
         let statusTick = "";
         if (isMe) {
-            // Anlık aktiflik veya geçmiş görülme eşleşme kontrolü
             if (isPartnerOnline || partnerLastActive > msgTimeMs) {
                 statusTick = `<span class="text-sky-500 ml-1">✓✓</span>`;
             } else {
