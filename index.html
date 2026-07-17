@@ -132,6 +132,11 @@
 
                 <div id="messages-container" class="p-4 flex flex-col gap-3 relative z-10"></div>
 
+                <div id="scroll-to-bottom-btn" class="hidden absolute bottom-20 right-4 sm:right-6 z-40 flex items-center justify-center bg-white dark:bg-zinc-700 text-gray-600 dark:text-zinc-200 rounded-full w-10 h-10 shadow-md border border-gray-200/60 dark:border-zinc-600/50 cursor-pointer transition-all duration-300 transform scale-95 hover:scale-100 active:scale-90">
+                    <i class="fa-solid fa-chevron-down text-sm"></i>
+                    <span id="unread-badge" class="hidden absolute -top-2 -right-1 bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-sm">0</span>
+                </div>
+
                 <div id="input-bar-container" class="p-2.5 sm:p-3 bg-gray-50 dark:bg-zinc-800 border-t border-gray-100 dark:border-zinc-700/50 flex items-center gap-2 relative z-30 shrink-0 safe-bottom shadow-[0_-2px_10px_rgba(0,0,0,0.03)] w-full items-end">
                     
                     <label id="attach-label" class="w-10 h-10 flex items-center justify-center rounded-xl bg-white dark:bg-zinc-700 text-gray-500 dark:text-zinc-300 border border-gray-200 dark:border-zinc-600 cursor-pointer active:scale-95 transition shrink-0 shadow-sm mb-0.5">

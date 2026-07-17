@@ -1,7 +1,7 @@
 import { db, switchDatabaseAccount } from "./firebase-config.js";
 import { 
     collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, 
-    doc, setDoc, updateDoc, where, getDocs
+    doc, setDoc, updateDoc, where, getDocs, limitToLast
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // === EMAILJS CONFIG ===
@@ -31,6 +31,12 @@ let isRecordCancelled = false;
 let activeStream = null;
 let voiceDurationSeconds = 0;
 let voiceTimerInterval = null;
+
+// Yeni Durum Takip Değişkenleri
+let isUserScrolledUp = false;
+let incomingUnreadCount = 0;
+let hasUserInteractedSinceLogin = false; 
+let initialUnreadSeparatorPlaced = false;
 
 const loginScreen = document.getElementById("login-screen");
 const chatScreen = document.getElementById("chat-screen");
@@ -63,6 +69,10 @@ const imagePreviewModal = document.getElementById("image-preview-modal");
 const modalPreviewImg = document.getElementById("modal-preview-img");
 const modalCloseBtn = document.getElementById("modal-close-btn");
 const modalDownloadBtn = document.getElementById("modal-download-btn");
+
+// Yeni Eklenen DOM Elementleri
+const scrollToBottomBtn = document.getElementById("scroll-to-bottom-btn");
+const unreadBadge = document.getElementById("unread-badge");
 
 // KOTA HATASI YAKALAMA VE OTOMATİK DEPO DEĞİŞTİRME MOTORU
 async function handleQuotaError(error, retryFunction, ...args) {
@@ -173,7 +183,7 @@ function forceLayoutRefresh() {
     const appContainer = document.getElementById("app-container");
     if (appContainer) appContainer.style.height = `${viewportHeight}px`;
     
-    if (currentUser && messagesContainer) {
+    if (currentUser && messagesContainer && !isUserScrolledUp) {
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
     window.scrollTo(0, 0);
@@ -239,6 +249,8 @@ function formatLastSeen(lastActiveMs) {
 }
 
 async function sendEmailNotification(messageText, contentType = "metin") {
+    // 📩 Güncelleme 1: Sadece Biyoloji kullanıcısı mesaj attığında e-posta tetiklenecek kuralı entegre edildi.
+    if (currentUser !== "Biyolojinin Son Kalesi") return;
     if (isPartnerOnline) return;
     if (EMAILJS_PUBLIC_KEY === "YOUR_PUBLIC_KEY") return;
 
@@ -272,7 +284,6 @@ async function forceSendPing(isOnlineStatus) {
 function startHeartbeatSystem() {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     forceSendPing(true);
-    // ⏱️ Oynama 1: Ping sıklığını 4 saniyeden 15 saniyeye çıkararak varlık kotası tüketimini %75 azalttık.
     heartbeatInterval = setInterval(() => {
         forceSendPing(true);
     }, 15000);
@@ -284,7 +295,7 @@ window.openChatArea = function() {
         chatArea.classList.remove("hidden", "md:flex");
         chatArea.classList.add("flex", "w-full");
     }
-    setTimeout(() => { if(messagesContainer) messagesContainer.scrollTop = messagesContainer.scrollHeight; }, 150);
+    setTimeout(() => { if(messagesContainer && !isUserScrolledUp) messagesContainer.scrollTop = messagesContainer.scrollHeight; }, 150);
 };
 
 window.closeChatArea = function() {
@@ -331,6 +342,7 @@ window.selectUser = function(user) {
     });
     
     window.addEventListener("focus", () => { startHeartbeatSystem(); });
+    setupScrollTracking();
 };
 
 function listenPartnerPresence() {
@@ -339,7 +351,7 @@ function listenPartnerPresence() {
             const data = docSnap.data();
             const now = Date.now();
             const lastActive = data.lastActive || 0;
-            const isReallyOnline = data.isOnline && (now - lastActive < 35000); // Toleransı ping süresine göre artırdık
+            const isReallyOnline = data.isOnline && (now - lastActive < 35000);
             
             isPartnerOnline = isReallyOnline;
             
@@ -384,6 +396,11 @@ function setupTypingListener() {
             handleQuotaError(e, () => { updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: true }); });
         }
     });
+
+    // 🎯 Güncelleme 2: Kullanıcı klavyeye dokunduğu veya input'a odaklandığı an "Okunmamış Mesajlar" çizgisi mantığı sıfırlanacak.
+    messageInput.addEventListener("focus", () => {
+        hasUserInteractedSinceLogin = true;
+    });
 }
 
 async function markIncomingMessagesAsRead() {
@@ -399,6 +416,7 @@ async function markIncomingMessagesAsRead() {
 
 async function sendCustomMessage(payload, type = "text") {
     try {
+        hasUserInteractedSinceLogin = true; // Mesaj attıysa etkileşim başlamıştır
         if(currentUser) await updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false });
         const initialStatus = isPartnerOnline ? "delivered" : "sent";
         
@@ -576,13 +594,51 @@ if(voiceCancelBtn) {
     voiceCancelBtn.addEventListener("click", () => { stopVoiceRecording(true); });
 }
 
+// 🎯 SOHBET KAYDIRMA VE AKILLI BUTON MOTORU
+function setupScrollTracking() {
+    if (!messagesContainer) return;
+    messagesContainer.addEventListener("scroll", () => {
+        const currentScroll = messagesContainer.scrollTop;
+        const totalScrollHeight = messagesContainer.scrollHeight;
+        const clientHeight = messagesContainer.clientHeight;
+        
+        // Kullanıcı en alttan 150px veya daha fazla yukarı çıktıysa yukarıda kabul et
+        if (totalScrollHeight - currentScroll - clientHeight > 150) {
+            isUserScrolledUp = true;
+            if (scrollToBottomBtn) scrollToBottomBtn.classList.remove("hidden");
+        } else {
+            isUserScrolledUp = false;
+            incomingUnreadCount = 0; 
+            if (scrollToBottomBtn) scrollToBottomBtn.classList.add("hidden");
+            if (unreadBadge) unreadBadge.classList.add("hidden");
+        }
+    });
+
+    if (scrollToBottomBtn) {
+        scrollToBottomBtn.addEventListener("click", () => {
+            isUserScrolledUp = false;
+            incomingUnreadCount = 0;
+            if (messagesContainer) {
+                messagesContainer.scrollTo({ top: messagesContainer.scrollHeight, behavior: 'smooth' });
+            }
+            if (scrollToBottomBtn) scrollToBottomBtn.classList.add("hidden");
+            if (unreadBadge) unreadBadge.classList.add("hidden");
+        });
+    }
+}
+
 function listenForMessages() {
-    const q = query(collection(db, "messages"), orderBy("timestamp", "asc"));
+    // 🚀 Güncelleme 3: Performans için yalnızca son 40 mesajı çekiyoruz (limitToLast)
+    const q = query(collection(db, "messages"), orderBy("timestamp", "asc"), limitToLast(40));
     let unsub = onSnapshot(q, (snapshot) => {
         if(!messagesContainer) return;
-        messagesContainer.innerHTML = "";
         
+        // Yeniden render öncesi scroll durumunu kontrol et
+        const wasAtBottomBeforeRender = !isUserScrolledUp;
+        
+        messagesContainer.innerHTML = "";
         let lastDisplayedDateString = ""; 
+        initialUnreadSeparatorPlaced = false;
 
         snapshot.forEach((docSnap) => {
             const data = docSnap.data();
@@ -590,8 +646,6 @@ function listenForMessages() {
             const isBelongsToCurrentChat = (data.sender === currentUser && data.receiver === chatPartner) || (data.sender === chatPartner && data.receiver === currentUser);
             if (!isBelongsToCurrentChat) return;
 
-            // ⚠️ Oynama 2 (Kritik Düzeltme): onSnapshot döngüsünün tetiklenmesini engellemek için veritabanını güncellemek yerine, 
-            // okundu bilgisini yalnızca karşı taraf çevrimiçiyse tekil bir tetikleyiciyle yapacak hale getirdik. Döngü kırıldı!
             if (data.receiver === currentUser && data.status !== "read" && isPartnerOnline) {
                 updateDoc(doc(db, "messages", msgId), { status: "read" }).catch(e => handleQuotaError(e));
             }
@@ -617,6 +671,21 @@ function listenForMessages() {
                     </div>
                 `;
                 messagesContainer.insertAdjacentHTML("beforeend", dateSeparatorHtml);
+            }
+
+            // 🎯 Güncelleme 4: Okunmamış mesajlar çizgisi (Kullanıcı bir şey yazıncaya/odaklanıncaya kadar kalır)
+            if (!hasUserInteractedSinceLogin && data.receiver === currentUser && data.status !== "read" && !initialUnreadSeparatorPlaced) {
+                initialUnreadSeparatorPlaced = true;
+                const unreadSeparatorHtml = `
+                    <div class="flex justify-center my-3 select-none w-full items-center gap-2">
+                        <div class="h-[1px] bg-red-400 dark:bg-red-500/50 flex-grow"></div>
+                        <span class="text-red-500 dark:text-red-400 text-[10px] font-bold tracking-wider uppercase px-2 bg-red-50 dark:bg-zinc-800 rounded border border-red-200 dark:border-red-500/30">
+                            Okunmamış Mesajlar
+                        </span>
+                        <div class="h-[1px] bg-red-400 dark:bg-red-500/50 flex-grow"></div>
+                    </div>
+                `;
+                messagesContainer.insertAdjacentHTML("beforeend", unreadSeparatorHtml);
             }
 
             const isMe = data.sender === currentUser;
@@ -658,7 +727,19 @@ function listenForMessages() {
             `;
             messagesContainer.insertAdjacentHTML("beforeend", messageHtml);
         });
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        // 🎯 Güncelleme 5: Kullanıcı yukarıda geziniyorsa ekrana yeni mesaj gelince scroll'u kilitle ve balonda sayıyı artır (+1, +2)
+        if (wasAtBottomBeforeRender) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        } else {
+            // Kullanıcı yukarıdayken karşı taraftan yeni bir snapshot (mesaj) gelmişse balonu güncelle
+            incomingUnreadCount++;
+            if (scrollToBottomBtn && unreadBadge && incomingUnreadCount > 1) { 
+                // İlk veri yüklemesindeki sayımları engellemek için > 1 kontrolü
+                unreadBadge.textContent = `+${incomingUnreadCount - 1}`;
+                unreadBadge.classList.remove("hidden");
+            }
+        }
     }, (error) => {
         handleQuotaError(error, () => {
             unsub();
@@ -677,7 +758,7 @@ window.addEventListener("resize", () => {
 if (messageInput) {
     messageInput.addEventListener("focus", () => {
         setTimeout(() => {
-            if (messagesContainer) {
+            if (messagesContainer && !isUserScrolledUp) {
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
             window.scrollTo(0, 0);
