@@ -41,6 +41,10 @@ let isUserScrolledUp = false;
 let currentMessageLimit = 40; 
 let isPaginationLoading = false;
 
+// Ön Düzenleme ve Yükleme Takibi
+let pendingMediaFile = null;
+let pendingMediaType = null;
+
 const loginScreen = document.getElementById("login-screen");
 const chatScreen = document.getElementById("chat-screen");
 const currentUserNameEl = document.getElementById("current-user-name");
@@ -74,6 +78,65 @@ const modalCloseBtn = document.getElementById("modal-close-btn");
 const modalDownloadBtn = document.getElementById("modal-download-btn");
 
 const scrollToBottomBtn = document.getElementById("scroll-to-bottom-btn");
+
+// 🛠️ DİNAMİK ÖN DÜZENLEME / ONAY MODALI OLUŞTURMA
+function createMediaConfirmModal() {
+    if (document.getElementById("media-confirm-modal")) return;
+    const modalHtml = `
+        <div id="media-confirm-modal" class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 hidden">
+            <div class="bg-white dark:bg-zinc-800 rounded-2xl max-w-md w-full p-4 flex flex-col items-center gap-4 shadow-2xl border border-gray-100 dark:border-zinc-700">
+                <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100">Medya Gönderilsin mi?</h3>
+                <div id="media-confirm-preview" class="w-full max-h-[60vh] flex items-center justify-center overflow-hidden rounded-xl bg-gray-100 dark:bg-zinc-900 p-2"></div>
+                <div class="flex gap-3 w-full justify-end">
+                    <button id="media-confirm-cancel" class="px-4 py-2 bg-gray-200 dark:bg-zinc-700 text-gray-700 dark:text-gray-200 rounded-xl hover:opacity-90 transition font-medium">İptal</button>
+                    <button id="media-confirm-send" class="px-5 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition font-medium">Gönder</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML("beforeend", modalHtml);
+
+    document.getElementById("media-confirm-cancel").addEventListener("click", cancelMediaConfirm);
+    document.getElementById("media-confirm-send").addEventListener("click", confirmAndSendMedia);
+}
+createMediaConfirmModal();
+
+function openMediaConfirmModal(file, type) {
+    pendingMediaFile = file;
+    pendingMediaType = type;
+    const previewContainer = document.getElementById("media-confirm-preview");
+    if (!previewContainer) return;
+
+    const objectUrl = URL.createObjectURL(file);
+    if (type === "image") {
+        previewContainer.innerHTML = `<img src="${objectUrl}" class="max-h-[50vh] rounded-lg object-contain">`;
+    } else if (type === "video") {
+        previewContainer.innerHTML = `<video src="${objectUrl}" controls class="max-h-[50vh] rounded-lg"></video>`;
+    } else {
+        previewContainer.innerHTML = `<audio src="${objectUrl}" controls class="w-full"></audio>`;
+    }
+
+    document.getElementById("media-confirm-modal").classList.remove("hidden");
+}
+
+function cancelMediaConfirm() {
+    pendingMediaFile = null;
+    pendingMediaType = null;
+    document.getElementById("media-confirm-modal").classList.add("hidden");
+    if (fileInput) fileInput.value = "";
+}
+
+function confirmAndSendMedia() {
+    if (!pendingMediaFile || !pendingMediaType) return;
+    const file = pendingMediaFile;
+    const type = pendingMediaType;
+    document.getElementById("media-confirm-modal").classList.add("hidden");
+    pendingMediaFile = null;
+    pendingMediaType = null;
+    if (fileInput) fileInput.value = "";
+
+    uploadMediaWithProgress(file, type);
+}
 
 async function handleQuotaError(error, retryFunction, ...args) {
     if (error && (error.code === 'resource-exhausted' || error.message?.includes('quota') || error.message?.includes('exhausted'))) {
@@ -143,7 +206,6 @@ if (closeTabBtn) {
     });
 }
 
-// 🛠️ FOTOĞRAF ÖNİZLEME VE İNDİRME DÜZELTİLDİ
 window.openImagePreview = function(src) {
     if (!imagePreviewModal || !modalPreviewImg) return;
     modalPreviewImg.src = src;
@@ -264,7 +326,7 @@ function stopHeartbeatSystem() {
     }
 }
 
-// 🛠️ SES KAYIT SİSTEMİ TAMAMEN GERİ EKLENDİ VE OPTİMİZE EDİLDİ
+// Ses Kayıt Fonksiyonları
 async function startVoiceRecording() {
     try {
         activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -291,7 +353,7 @@ async function startVoiceRecording() {
 
             const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
             if (audioBlob.size > 0) {
-                sendCustomMessage(audioBlob, "audio");
+                openMediaConfirmModal(audioBlob, "audio");
             }
         };
 
@@ -339,6 +401,111 @@ if (voiceBtn) {
 if (voiceCancelBtn) {
     voiceCancelBtn.addEventListener("click", () => {
         stopVoiceRecording(true);
+    });
+}
+
+// 🛠️ YÜZDELİK YÜKLEME VE BİLDİRİM SİSTEMİ (2 Write - Maksimum Tasarruf)
+async function uploadMediaWithProgress(file, type) {
+    let docRef = null;
+    try {
+        if (currentUser) await updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false });
+
+        // 1. Write: Yükleniyor Taslağını Oluştur
+        docRef = await addDoc(collection(db, "messages"), {
+            sender: currentUser, receiver: chatPartner,
+            message: "", fileData: "",
+            messageType: type, status: "uploading",
+            timestamp: serverTimestamp(), localCreatedAt: Date.now()
+        });
+
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+        let resourceType = (type === "audio" || type === "video") ? "video" : "image";
+
+        // XHR ile Cloudinary'ye Yükleme + Yerel Progress Takibi
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`, true);
+
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+                const percentComplete = Math.round((e.loaded / e.total) * 100);
+                const progressBar = document.getElementById(`progress-bar-${docRef.id}`);
+                const progressText = document.getElementById(`progress-text-${docRef.id}`);
+                if (progressBar) progressBar.style.width = `${percentComplete}%`;
+                if (progressText) progressText.textContent = `%${percentComplete}`;
+            }
+        };
+
+        xhr.onload = async () => {
+            if (xhr.status === 200) {
+                const result = JSON.parse(xhr.responseText);
+                if (result.secure_url) {
+                    // 2. Write: Tamamlandı Olarak Güncelle
+                    await updateDoc(doc(db, "messages", docRef.id), {
+                        fileData: result.secure_url,
+                        status: "completed"
+                    });
+                    sendEmailNotification(`Sana bir ${type === "image" ? "fotoğraf" : "ses kaydı"} gönderdi.`, type);
+                }
+            } else {
+                console.error("Yükleme başarısız:", xhr.responseText);
+            }
+        };
+
+        xhr.onerror = () => { console.error("Cloudinary Ağı Hatası"); };
+        xhr.send(formData);
+
+    } catch (e) {
+        handleQuotaError(e, uploadMediaWithProgress, file, type);
+    }
+}
+
+async function sendCustomMessage(payload, type = "text") {
+    try {
+        if(currentUser) await updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false });
+        await addDoc(collection(db, "messages"), {
+            sender: currentUser, receiver: chatPartner,
+            message: payload, fileData: "",
+            messageType: type, status: "completed",
+            timestamp: serverTimestamp(), localCreatedAt: Date.now() 
+        });
+        sendEmailNotification(payload, "metin");
+    } catch (e) { handleQuotaError(e, sendCustomMessage, payload, type); }
+}
+
+function handleMessageSubmit() {
+    if (isRecording) { stopVoiceRecording(false); return; }
+    const text = messageInput.value.trim();
+    if (text) { 
+        sendCustomMessage(text, "text"); 
+        messageInput.value = ""; 
+        messageInput.style.height = '40px'; 
+    }
+    setTimeout(() => { messageInput.focus(); }, 20); 
+}
+
+if(sendBtn) sendBtn.addEventListener("click", handleMessageSubmit);
+
+if(messageInput) {
+    messageInput.addEventListener("keydown", (e) => {
+        const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        if (e.key === "Enter" && !isMobile && !e.shiftKey) {
+            e.preventDefault(); 
+            handleMessageSubmit();
+        }
+    });
+}
+
+if(fileInput) {
+    fileInput.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        let type = "image";
+        if (file.type.startsWith("audio/")) type = "audio";
+        else if (file.type.startsWith("video/")) type = "video";
+        
+        openMediaConfirmModal(file, type);
     });
 }
 
@@ -390,7 +557,6 @@ window.selectUser = function(user) {
         forceSendPing(false); 
     });
     
-    // 🛠️ SIKI ARKA PLAN (PRESENCE) KONTROLÜ
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === 'visible') {
             startHeartbeatSystem();
@@ -455,71 +621,6 @@ function setupTypingListener() {
                 try { updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false }); } catch(e) { handleQuotaError(e); }
             }, 1500);
         } catch(e) { handleQuotaError(e); }
-    });
-}
-
-async function sendCustomMessage(payload, type = "text") {
-    try {
-        if(currentUser) await updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false });
-        let finalData = payload;
-
-        if (type === "image" || type === "audio" || type === "video") {
-            const formData = new FormData();
-            formData.append("file", payload);
-            formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-            let resourceType = (type === "audio" || type === "video") ? "video" : "image";
-
-            const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`, {
-                method: "POST",
-                body: formData
-            });
-            const result = await response.json();
-            if (result.secure_url) finalData = result.secure_url;
-            else throw new Error("Cloudinary yükleme hatası");
-        }
-
-        await addDoc(collection(db, "messages"), {
-            sender: currentUser, receiver: chatPartner,
-            message: type === "text" ? finalData : "",
-            fileData: type !== "text" ? finalData : "",
-            messageType: type, timestamp: serverTimestamp(),
-            localCreatedAt: Date.now() 
-        });
-        sendEmailNotification(type === "text" ? finalData : `Sana bir ${type === "image" ? "fotoğraf" : "ses kaydı"} gönderdi.`, type === "text" ? "metin" : type);
-    } catch (e) { handleQuotaError(e, sendCustomMessage, payload, type); }
-}
-
-function handleMessageSubmit() {
-    if (isRecording) { stopVoiceRecording(false); return; }
-    const text = messageInput.value.trim();
-    if (text) { 
-        sendCustomMessage(text, "text"); 
-        messageInput.value = ""; 
-        messageInput.style.height = '40px'; 
-    }
-    setTimeout(() => { messageInput.focus(); }, 20); 
-}
-
-if(sendBtn) sendBtn.addEventListener("click", handleMessageSubmit);
-
-if(messageInput) {
-    messageInput.addEventListener("keydown", (e) => {
-        const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-        if (e.key === "Enter" && !isMobile && !e.shiftKey) {
-            e.preventDefault(); 
-            handleMessageSubmit();
-        }
-    });
-}
-
-if(fileInput) {
-    fileInput.addEventListener("change", (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        if (file.type.startsWith("image/")) sendCustomMessage(file, "image");
-        else if (file.type.startsWith("audio/")) sendCustomMessage(file, "audio");
-        else if (file.type.startsWith("video/")) sendCustomMessage(file, "video");
-        fileInput.value = ""; 
     });
 }
 
@@ -592,6 +693,7 @@ function renderMessagesHTML(snapshot) {
 
     snapshot.forEach((docSnap) => {
         const data = docSnap.data();
+        const msgId = docSnap.id;
         const isBelongsToCurrentChat = (data.sender === currentUser && data.receiver === chatPartner) || (data.sender === chatPartner && data.receiver === currentUser);
         if (!isBelongsToCurrentChat) return;
 
@@ -624,17 +726,40 @@ function renderMessagesHTML(snapshot) {
         let messageBg = isMe ? "bg-[#d9fdd3] dark:bg-emerald-900/40 text-gray-800 dark:text-gray-100 self-end rounded-l-xl rounded-br-xl" : "bg-white dark:bg-zinc-700 text-gray-800 dark:text-gray-100 self-start rounded-r-xl rounded-bl-xl";
         
         let contentBody = "";
-        if (data.messageType === "image") {
-            contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] object-cover shadow-sm cursor-pointer" onclick="window.openImagePreview(this.src)">`;
-        } else if (data.messageType === "audio") {
-            contentBody = `<audio src="${data.fileData}" controls class="w-[180px] h-8"></audio>`;
-        } else if (data.messageType === "video") {
-            contentBody = `
-                <div class="flex flex-col gap-2 p-1">
-                    <a href="${data.fileData}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center justify-center gap-2 bg-zinc-800 text-white text-xs font-semibold px-3 py-2 rounded-lg">Videoyu İzle / İndir</a>
-                </div>`;
+
+        // 🛠️ YÜKLENİYOR / TAMAMLANDI EKRAN RENDER MANTIĞI
+        if (data.status === "uploading") {
+            if (isMe) {
+                contentBody = `
+                    <div class="flex flex-col gap-2 p-2 w-[180px]">
+                        <div class="flex justify-between items-center text-xs font-semibold text-gray-600 dark:text-gray-300">
+                            <span>Gönderiliyor...</span>
+                            <span id="progress-text-${msgId}">%0</span>
+                        </div>
+                        <div class="w-full bg-gray-200 dark:bg-zinc-600 h-2 rounded-full overflow-hidden">
+                            <div id="progress-bar-${msgId}" class="bg-emerald-500 h-full w-0 transition-all duration-150"></div>
+                        </div>
+                    </div>`;
+            } else {
+                contentBody = `
+                    <div class="flex items-center gap-2 p-2 text-xs italic text-gray-500 dark:text-gray-300">
+                        <i class="fa-solid fa-spinner animate-spin text-emerald-500"></i>
+                        <span>Karşı taraf bir ${data.messageType === 'image' ? 'fotoğraf' : data.messageType === 'video' ? 'video' : 'ses kaydı'} gönderiyor...</span>
+                    </div>`;
+            }
         } else {
-            contentBody = `<p class="break-words max-w-[65vw] md:max-w-md whitespace-pre-wrap">${data.message}</p>`;
+            if (data.messageType === "image") {
+                contentBody = `<img src="${data.fileData}" class="rounded-lg max-w-[200px] object-cover shadow-sm cursor-pointer" onclick="window.openImagePreview(this.src)">`;
+            } else if (data.messageType === "audio") {
+                contentBody = `<audio src="${data.fileData}" controls class="w-[180px] h-8"></audio>`;
+            } else if (data.messageType === "video") {
+                contentBody = `
+                    <div class="flex flex-col gap-2 p-1">
+                        <a href="${data.fileData}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center justify-center gap-2 bg-zinc-800 text-white text-xs font-semibold px-3 py-2 rounded-lg">Videoyu İzle / İndir</a>
+                    </div>`;
+            } else {
+                contentBody = `<p class="break-words max-w-[65vw] md:max-w-md whitespace-pre-wrap">${data.message}</p>`;
+            }
         }
 
         let statusTick = "";
