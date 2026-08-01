@@ -10,7 +10,7 @@ const EMAILJS_SERVICE_ID = "service_5ah7zw2";
 const EMAILJS_TEMPLATE_ID = "template_dolj6lc";
 
 if (typeof emailjs !== "undefined" && EMAILJS_PUBLIC_KEY !== "YOUR_PUBLIC_KEY") {
-    emailjs.init(EMAILJS_PUBLIC_KEY);
+    emailjs.init(EMAILJS_PUBLIC_KEY);
 }
 
 // === CLOUDINARY CONFIG ===
@@ -27,6 +27,7 @@ let heartbeatInterval = null;
 let messagesUnsubscribe = null; 
 let lastSnapshotCache = null; 
 
+// Ses Kayıt Değişkenleri
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
@@ -70,6 +71,7 @@ const chatArea = document.getElementById("chat-area");
 const imagePreviewModal = document.getElementById("image-preview-modal");
 const modalPreviewImg = document.getElementById("modal-preview-img");
 const modalCloseBtn = document.getElementById("modal-close-btn");
+const modalDownloadBtn = document.getElementById("modal-download-btn");
 
 const scrollToBottomBtn = document.getElementById("scroll-to-bottom-btn");
 
@@ -110,7 +112,7 @@ const KUMARBAZ_QUOTES = [
 ];
 
 function triggerBlackoutSystem() {
-    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    stopHeartbeatSystem();
     window.history.pushState(null, null, window.location.href);
     window.addEventListener('popstate', function () {
         window.history.pushState(null, null, window.location.href);
@@ -141,9 +143,14 @@ if (closeTabBtn) {
     });
 }
 
+// 🛠️ FOTOĞRAF ÖNİZLEME VE İNDİRME DÜZELTİLDİ
 window.openImagePreview = function(src) {
     if (!imagePreviewModal || !modalPreviewImg) return;
     modalPreviewImg.src = src;
+    if (modalDownloadBtn) {
+        modalDownloadBtn.href = src;
+        modalDownloadBtn.target = "_blank";
+    }
     imagePreviewModal.classList.remove("hidden");
 };
 
@@ -245,9 +252,94 @@ async function forceSendPing(isOnlineStatus) {
 }
 
 function startHeartbeatSystem() {
-    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    stopHeartbeatSystem();
     forceSendPing(true);
     heartbeatInterval = setInterval(() => { forceSendPing(true); }, 15000);
+}
+
+function stopHeartbeatSystem() {
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+    }
+}
+
+// 🛠️ SES KAYIT SİSTEMİ TAMAMEN GERİ EKLENDİ VE OPTİMİZE EDİLDİ
+async function startVoiceRecording() {
+    try {
+        activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(activeStream);
+        audioChunks = [];
+        isRecording = true;
+        isRecordCancelled = false;
+
+        mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) audioChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+            if (activeStream) {
+                activeStream.getTracks().forEach(track => track.stop());
+                activeStream = null;
+            }
+            if (voiceTimerInterval) clearInterval(voiceTimerInterval);
+            
+            if (isRecordCancelled) {
+                isRecordCancelled = false;
+                return;
+            }
+
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            if (audioBlob.size > 0) {
+                sendCustomMessage(audioBlob, "audio");
+            }
+        };
+
+        mediaRecorder.start();
+        voiceDurationSeconds = 0;
+        if (voiceTimer) voiceTimer.textContent = "00:00";
+        if (voiceStatusPanel) voiceStatusPanel.classList.remove("hidden");
+        if (messageInput) messageInput.classList.add("hidden");
+        if (attachLabel) attachLabel.classList.add("hidden");
+
+        voiceTimerInterval = setInterval(() => {
+            voiceDurationSeconds++;
+            const mins = String(Math.floor(voiceDurationSeconds / 60)).padStart(2, '0');
+            const secs = String(voiceDurationSeconds % 60).padStart(2, '0');
+            if (voiceTimer) voiceTimer.textContent = `${mins}:${secs}`;
+        }, 1000);
+
+    } catch (err) {
+        console.error("Mikrofon erişim hatası:", err);
+        alert("Mikrofona erişim sağlanamadı.");
+    }
+}
+
+function stopVoiceRecording(cancel = false) {
+    if (!isRecording) return;
+    isRecording = false;
+    isRecordCancelled = cancel;
+
+    if (voiceStatusPanel) voiceStatusPanel.classList.add("hidden");
+    if (messageInput) messageInput.classList.remove("hidden");
+    if (attachLabel) attachLabel.classList.remove("hidden");
+
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+    }
+}
+
+if (voiceBtn) {
+    voiceBtn.addEventListener("click", () => {
+        if (!isRecording) startVoiceRecording();
+        else stopVoiceRecording(false);
+    });
+}
+
+if (voiceCancelBtn) {
+    voiceCancelBtn.addEventListener("click", () => {
+        stopVoiceRecording(true);
+    });
 }
 
 window.openChatArea = function() {
@@ -293,14 +385,27 @@ window.selectUser = function(user) {
     listenForMessages(); 
 
     window.addEventListener("beforeunload", () => { forceSendPing(false); });
-    window.addEventListener("pagehide", () => { forceSendPing(false); });
+    window.addEventListener("pagehide", () => { 
+        stopHeartbeatSystem();
+        forceSendPing(false); 
+    });
     
+    // 🛠️ SIKI ARKA PLAN (PRESENCE) KONTROLÜ
     document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === 'visible') startHeartbeatSystem();
-        else forceSendPing(false);
+        if (document.visibilityState === 'visible') {
+            startHeartbeatSystem();
+        } else {
+            stopHeartbeatSystem();
+            forceSendPing(false);
+        }
     });
     
     window.addEventListener("focus", () => { startHeartbeatSystem(); });
+    window.addEventListener("blur", () => { 
+        stopHeartbeatSystem();
+        forceSendPing(false); 
+    });
+
     setupScrollTracking();
 };
 
