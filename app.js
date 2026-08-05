@@ -10,13 +10,19 @@ const EMAILJS_SERVICE_ID = "service_5ah7zw2";
 const EMAILJS_TEMPLATE_ID = "template_dolj6lc";
 
 if (typeof emailjs !== "undefined" && EMAILJS_PUBLIC_KEY !== "YOUR_PUBLIC_KEY") {
-    emailjs.init(EMAILJS_PUBLIC_KEY);
+    emailjs.init(EMAILJS_PUBLIC_KEY);
 }
 
 // === CLOUDINARY CONFIG ===
 const CLOUDINARY_CLOUD_NAME = "kmnkotv7";
 const CLOUDINARY_UPLOAD_PRESET = "chat_secure_preset"; 
 const CLOUDINARY_API_KEY = "523656588757819";
+
+// 🛠️ PROFİL RESİMLERİ (Buralara Kendi Resim Linklerini Koyabilirsin)
+const PROFILE_AVATARS = {
+    "Mat Dehası": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/67/Adriana_Lima_by_David_Shankbone_Cropped.JPG/250px-Adriana_Lima_by_David_Shankbone_Cropped.JPG?utm_source=en.wikipedia.org&utm_campaign=parser&utm_content=thumbnail",
+    "Biyolojinin Son Kalesi": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTmVPzKMby5CgD8Og2uR9I87jIgIK5avuPoxk5fZertRCWA9U5JWXtvP-c8&s=10"
+};
 
 let currentUser = "";
 let chatPartner = "";
@@ -79,7 +85,61 @@ const modalDownloadBtn = document.getElementById("modal-download-btn");
 
 const scrollToBottomBtn = document.getElementById("scroll-to-bottom-btn");
 
-// 🛠️ DİNAMİK ÖN DÜZENLEME / ONAY MODALI OLUŞTURMA
+// 🛠️ DİNAMİK PROFİL KARTI MODALI OLUŞTURMA
+function createProfileCardModal() {
+    if (document.getElementById("profile-card-modal")) return;
+    const modalHtml = `
+        <div id="profile-card-modal" class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 hidden">
+            <div class="bg-white dark:bg-zinc-800 rounded-2xl max-w-sm w-full p-6 flex flex-col items-center gap-4 shadow-2xl border border-gray-100 dark:border-zinc-700 relative animate-fadeIn">
+                <button id="profile-card-close" class="absolute top-3 right-3 text-gray-400 hover:text-gray-600 dark:hover:text-white text-xl p-1">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <div class="w-32 h-32 rounded-full overflow-hidden ring-4 ring-emerald-500/30 shadow-lg">
+                    <img id="profile-card-img" src="" class="w-full h-full object-cover">
+                </div>
+                <div class="text-center">
+                    <h3 id="profile-card-name" class="text-xl font-bold text-gray-800 dark:text-gray-100"></h3>
+                    <p id="profile-card-status" class="text-sm text-gray-500 dark:text-gray-400 mt-1"></p>
+                </div>
+                <button id="profile-card-expand-btn" class="mt-2 w-full py-2 px-4 bg-gray-100 dark:bg-zinc-700 hover:bg-gray-200 dark:hover:bg-zinc-600 text-gray-700 dark:text-gray-200 rounded-xl transition text-sm font-medium flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-expand"></i> Fotoğrafı Tam Ekran Gör / İndir
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML("beforeend", modalHtml);
+
+    document.getElementById("profile-card-close").addEventListener("click", () => {
+        document.getElementById("profile-card-modal").classList.add("hidden");
+    });
+
+    document.getElementById("profile-card-expand-btn").addEventListener("click", () => {
+        const imgSrc = document.getElementById("profile-card-img").src;
+        document.getElementById("profile-card-modal").classList.add("hidden");
+        window.openImagePreview(imgSrc);
+    });
+}
+createProfileCardModal();
+
+function openProfileCard() {
+    if (!chatPartner) return;
+    const avatarUrl = PROFILE_AVATARS[chatPartner] || "";
+    const statusText = partnerStatusHeader ? partnerStatusHeader.textContent : "";
+
+    document.getElementById("profile-card-img").src = avatarUrl;
+    document.getElementById("profile-card-name").textContent = chatPartner;
+    document.getElementById("profile-card-status").textContent = statusText;
+    document.getElementById("profile-card-modal").classList.remove("hidden");
+}
+
+// Header başlığına veya avatarına tıklandığında profil kartını aç
+const chatHeaderTitleArea = document.getElementById("chat-header-partner-name")?.parentElement;
+if (chatHeaderTitleArea) {
+    chatHeaderTitleArea.classList.add("cursor-pointer");
+    chatHeaderTitleArea.addEventListener("click", openProfileCard);
+}
+
+// DİNAMİK ÖN DÜZENLEME / ONAY MODALI OLUŞTURMA
 function createMediaConfirmModal() {
     if (document.getElementById("media-confirm-modal")) return;
     const modalHtml = `
@@ -404,13 +464,11 @@ if (voiceCancelBtn) {
     });
 }
 
-// 🛠️ YÜZDELİK YÜKLEME VE BİLDİRİM SİSTEMİ (2 Write - Maksimum Tasarruf)
 async function uploadMediaWithProgress(file, type) {
     let docRef = null;
     try {
         if (currentUser) await updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false });
 
-        // 1. Write: Yükleniyor Taslağını Oluştur
         docRef = await addDoc(collection(db, "messages"), {
             sender: currentUser, receiver: chatPartner,
             message: "", fileData: "",
@@ -423,7 +481,6 @@ async function uploadMediaWithProgress(file, type) {
         formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
         let resourceType = (type === "audio" || type === "video") ? "video" : "image";
 
-        // XHR ile Cloudinary'ye Yükleme + Yerel Progress Takibi
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`, true);
 
@@ -441,7 +498,6 @@ async function uploadMediaWithProgress(file, type) {
             if (xhr.status === 200) {
                 const result = JSON.parse(xhr.responseText);
                 if (result.secure_url) {
-                    // 2. Write: Tamamlandı Olarak Güncelle
                     await updateDoc(doc(db, "messages", docRef.id), {
                         fileData: result.secure_url,
                         status: "completed"
@@ -533,7 +589,20 @@ window.selectUser = function(user) {
     if(currentUserNameEl) currentUserNameEl.textContent = currentUser;
     if(chatPartnerNameEl) chatPartnerNameEl.textContent = chatPartner;
     if(chatHeaderPartnerNameEl) chatHeaderPartnerNameEl.textContent = chatPartner;
-    if(avatarPlaceholder) avatarPlaceholder.textContent = chatPartner.charAt(0);
+
+    // 🛠️ PROFİL RESİMLERİNİ YÜKLE
+    const partnerAvatarUrl = PROFILE_AVATARS[chatPartner] || "";
+    if(avatarPlaceholder) {
+        avatarPlaceholder.innerHTML = `<img src="${partnerAvatarUrl}" class="w-full h-full object-cover rounded-full cursor-pointer">`;
+        avatarPlaceholder.onclick = openProfileCard;
+    }
+
+    const headerAvatarEl = document.getElementById("chat-header-avatar");
+    if (headerAvatarEl) {
+        headerAvatarEl.src = partnerAvatarUrl;
+        headerAvatarEl.classList.remove("hidden");
+        headerAvatarEl.onclick = openProfileCard;
+    }
 
     if(loginScreen) loginScreen.classList.add("hidden");
     if(chatScreen) chatScreen.classList.remove("hidden");
@@ -727,7 +796,6 @@ function renderMessagesHTML(snapshot) {
         
         let contentBody = "";
 
-        // 🛠️ YÜKLENİYOR / TAMAMLANDI EKRAN RENDER MANTIĞI
         if (data.status === "uploading") {
             if (isMe) {
                 contentBody = `
