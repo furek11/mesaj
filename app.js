@@ -590,17 +590,19 @@ window.selectUser = function(user) {
     if(chatPartnerNameEl) chatPartnerNameEl.textContent = chatPartner;
     if(chatHeaderPartnerNameEl) chatHeaderPartnerNameEl.textContent = chatPartner;
 
-    // 🛠️ PROFİL RESİMLERİNİ YÜKLE
+    // 🛠️ PROFİL RESMİNİ SOHBET ÜST BARINA (HEADER) VE SİDEBAR'A AKTARMA
     const partnerAvatarUrl = PROFILE_AVATARS[chatPartner] || "";
+    
+    // Sidebar profil resmi
     if(avatarPlaceholder) {
         avatarPlaceholder.innerHTML = `<img src="${partnerAvatarUrl}" class="w-full h-full object-cover rounded-full cursor-pointer">`;
         avatarPlaceholder.onclick = openProfileCard;
     }
 
+    // Sohbet Üst Barı (Header) Profil Resmi
     const headerAvatarEl = document.getElementById("chat-header-avatar");
     if (headerAvatarEl) {
         headerAvatarEl.src = partnerAvatarUrl;
-        headerAvatarEl.classList.remove("hidden");
         headerAvatarEl.onclick = openProfileCard;
     }
 
