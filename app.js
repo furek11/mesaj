@@ -18,10 +18,10 @@ const CLOUDINARY_CLOUD_NAME = "kmnkotv7";
 const CLOUDINARY_UPLOAD_PRESET = "chat_secure_preset"; 
 const CLOUDINARY_API_KEY = "523656588757819";
 
-// 🛠️ PROFİL RESİMLERİ (Buralara Kendi Resim Linklerini Koyabilirsin)
+// 🛠️ PROFİL RESİMLERİ (Kendi Klasöründen Çekme)
 const PROFILE_AVATARS = {
-    "Mat Dehası": "https://res.cloudinary.com/kmnkotv7/image/private/s--bqmxUlEs--/v1786034937/ihi53jrs3rtcoi4pvxd2.jpg",
-    "Biyolojinin Son Kalesi": "https://res.cloudinary.com/kmnkotv7/image/private/s--_5L3rLat--/v1786034964/y7hejbh7npydweu4zrha.jpg"
+    "Mat Dehası": "./assets/mat-dehasi.jpg",
+    "Biyolojinin Son Kalesi": "./assets/biyoloji-kalesi.jpg"
 };
 
 let currentUser = "";
@@ -848,7 +848,7 @@ function renderMessagesHTML(snapshot) {
             </div>`;
         messagesContainer.insertAdjacentHTML("beforeend", messageHtml);
     });
-}
+    }
 
 window.addEventListener("resize", () => {
     if (currentUser && window.innerWidth > 768) {
