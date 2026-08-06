@@ -20,8 +20,8 @@ const CLOUDINARY_API_KEY = "523656588757819";
 
 // 🛠️ PROFİL RESİMLERİ (Buralara Kendi Resim Linklerini Koyabilirsin)
 const PROFILE_AVATARS = {
-    "Mat Dehası": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/67/Adriana_Lima_by_David_Shankbone_Cropped.JPG/250px-Adriana_Lima_by_David_Shankbone_Cropped.JPG?utm_source=en.wikipedia.org&utm_campaign=parser&utm_content=thumbnail",
-    "Biyolojinin Son Kalesi": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTmVPzKMby5CgD8Og2uR9I87jIgIK5avuPoxk5fZertRCWA9U5JWXtvP-c8&s=10"
+    "Mat Dehası": "https://res.cloudinary.com/kmnkotv7/image/private/s--bqmxUlEs--/v1786034937/ihi53jrs3rtcoi4pvxd2.jpg",
+    "Biyolojinin Son Kalesi": "https://res.cloudinary.com/kmnkotv7/image/private/s--_5L3rLat--/v1786034964/y7hejbh7npydweu4zrha.jpg"
 };
 
 let currentUser = "";
