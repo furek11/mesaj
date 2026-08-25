@@ -60,7 +60,7 @@ const heartbeatConfigs = [
 
 // Heartbeat istemcilerini ve veritabanlarını başlat
 const hbApps = heartbeatConfigs.map((cfg, index) => initializeApp(cfg, `HeartbeatApp_${index}`));
-const hbDatabases = hbApps.map(app => getFirestore(app));
+export const hbDatabases = hbApps.map(app => getFirestore(app));
 
 let currentHbIndex = 0;
 

@@ -1,4 +1,8 @@
-import { db, sendHeartbeat } from "./firebase-config.js";
+// ESKİ SATIR:
+// import { db, sendHeartbeat } from "./firebase-config.js";
+
+// YENİ SATIR (hbDatabases dizisini içeri aktarıyoruz):
+import { db, sendHeartbeat, hbDatabases } from "./firebase-config.js";
 import { 
     collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, 
     doc, setDoc, updateDoc, limitToLast
@@ -633,7 +637,8 @@ window.selectUser = function(user) {
 };
 
 function listenPartnerPresence() {
-    let unsub = onSnapshot(doc(db, "presence", getDocId(chatPartner)), (docSnap) => {
+    // Çevrimiçi bilgisini dinlemek için ilk Heartbeat sunucusundan (hbDatabases[0]) okuyoruz.
+    let unsub = onSnapshot(doc(hbDatabases[0], "presence", getDocId(chatPartner)), (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data();
             const now = Date.now();
