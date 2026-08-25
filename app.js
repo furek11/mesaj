@@ -509,15 +509,24 @@ async function uploadMediaWithProgress(file, type) {
 
 async function sendCustomMessage(payload, type = "text") {
     try {
-        if(currentUser) await updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false });
+        // 5. sunucudaki presence/updateDoc çağrısını kaldırdık (Hatayı veren kısım burasıydı)
         await addDoc(collection(db, "messages"), {
-            sender: currentUser, receiver: chatPartner,
-            message: payload, fileData: "",
-            messageType: type, status: "completed",
-            timestamp: serverTimestamp(), localCreatedAt: Date.now() 
+            sender: currentUser, 
+            receiver: chatPartner,
+            message: payload, 
+            fileData: "",
+            messageType: type, 
+            status: "completed",
+            timestamp: serverTimestamp(), 
+            localCreatedAt: Date.now() 
         });
+        
+        // Heartbeat sinyalini arka planda günceller
+        forceSendPing(true);
         sendEmailNotification(payload, "metin");
-    } catch (e) { console.error("Mesaj Gönderme Hatası:", e); }
+    } catch (e) { 
+        console.error("Mesaj Gönderme Hatası:", e); 
+    }
 }
 
 function handleMessageSubmit() {
@@ -677,10 +686,12 @@ function setupTypingListener() {
     messageInput.addEventListener("input", async () => {
         if (!currentUser) return;
         try {
-            await updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: true });
+            await setDoc(doc(hbDatabases[0], "presence", getDocId(currentUser)), { isTyping: true }, { merge: true });
             clearTimeout(typingTimeout);
             typingTimeout = setTimeout(async () => {
-                try { updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false }); } catch(e) {}
+                try { 
+                    await setDoc(doc(hbDatabases[0], "presence", getDocId(currentUser)), { isTyping: false }, { merge: true }); 
+                } catch(e) {}
             }, 1500);
         } catch(e) {}
     });
