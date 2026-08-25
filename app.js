@@ -1,4 +1,4 @@
-import { db, switchDatabaseAccount } from "./firebase-config.js";
+import { db, sendHeartbeat } from "./firebase-config.js";
 import { 
     collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, 
     doc, setDoc, updateDoc, limitToLast
@@ -198,17 +198,6 @@ function confirmAndSendMedia() {
     uploadMediaWithProgress(file, type);
 }
 
-async function handleQuotaError(error, retryFunction, ...args) {
-    if (error && (error.code === 'resource-exhausted' || error.message?.includes('quota') || error.message?.includes('exhausted'))) {
-        switchDatabaseAccount();
-        if (typeof retryFunction === 'function') {
-            setTimeout(() => { retryFunction(...args); }, 500);
-        }
-        return true;
-    }
-    return false;
-}
-
 darkModeToggle.addEventListener("click", () => {
     document.documentElement.classList.toggle("dark");
 });
@@ -324,7 +313,7 @@ function formatSmartDate(timestampMs) {
     if (isToday) return "Bugün";
     if (isYesterday) return "Dün";
 
-    const months = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+    const months = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylul", "Ekim", "Kasım", "Aralık"];
     return `${messageDate.getDate()} ${months[messageDate.getMonth()]} ${messageDate.getFullYear()}`;
 }
 
@@ -360,16 +349,13 @@ async function sendEmailNotification(messageText, contentType = "metin") {
 
 function getDocId(name) { return name.replace(/\s+/g, '_'); }
 
+// 🔄 YENİ AKILLI PING SİSTEMİ (firebase-config.js üzerinden otomatik sunucu değişimi yapar)
 async function forceSendPing(isOnlineStatus) {
     if (!currentUser) return;
     try {
-        return await setDoc(doc(db, "presence", getDocId(currentUser)), {
-            lastActive: Date.now(),
-            isOnline: isOnlineStatus
-        }, { merge: true });
+        await sendHeartbeat(getDocId(currentUser), isOnlineStatus);
     } catch (e) { 
-        const handled = await handleQuotaError(e, forceSendPing, isOnlineStatus);
-        if(!handled) console.error("Ping Hatası:", e); 
+        console.error("Ping Hatası:", e); 
     }
 }
 
@@ -513,7 +499,7 @@ async function uploadMediaWithProgress(file, type) {
         xhr.send(formData);
 
     } catch (e) {
-        handleQuotaError(e, uploadMediaWithProgress, file, type);
+        console.error("Medya Yükleme Hatası:", e);
     }
 }
 
@@ -527,7 +513,7 @@ async function sendCustomMessage(payload, type = "text") {
             timestamp: serverTimestamp(), localCreatedAt: Date.now() 
         });
         sendEmailNotification(payload, "metin");
-    } catch (e) { handleQuotaError(e, sendCustomMessage, payload, type); }
+    } catch (e) { console.error("Mesaj Gönderme Hatası:", e); }
 }
 
 function handleMessageSubmit() {
@@ -677,7 +663,7 @@ function listenPartnerPresence() {
             }
         }
     }, (error) => {
-        handleQuotaError(error, () => { unsub(); listenPartnerPresence(); });
+        console.error("Presence Dinleme Hatası:", error);
     });
 }
 
@@ -689,9 +675,9 @@ function setupTypingListener() {
             await updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: true });
             clearTimeout(typingTimeout);
             typingTimeout = setTimeout(async () => {
-                try { updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false }); } catch(e) { handleQuotaError(e); }
+                try { updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false }); } catch(e) {}
             }, 1500);
-        } catch(e) { handleQuotaError(e); }
+        } catch(e) {}
     });
 }
 
@@ -753,7 +739,7 @@ function listenForMessages() {
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         } 
     }, (error) => {
-        handleQuotaError(error, () => { listenForMessages(); });
+        console.error("Mesaj Dinleme Hatası:", error);
     });
 }
 
@@ -848,7 +834,7 @@ function renderMessagesHTML(snapshot) {
             </div>`;
         messagesContainer.insertAdjacentHTML("beforeend", messageHtml);
     });
-    }
+}
 
 window.addEventListener("resize", () => {
     if (currentUser && window.innerWidth > 768) {

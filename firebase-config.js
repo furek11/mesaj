@@ -1,80 +1,90 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // ==========================================
-// 🛠️ MANUEL SUNUCU SEÇİMİ AYARI
-// Hangi sunucudan başlamasını istiyorsan o numarayı yaz (1, 2, 3 veya 4)
-const MANUEL_DEPO_SECIMI = 1; 
+// 📩 1. MESAJ SUNUCUSU (5. Sunucu - Yalnızca Mesajlar İçin)
 // ==========================================
+const mainMsgConfig = {
+    apiKey: "AIzaSyAEgExqzkDtW_YoIrsaCOuzdsivYrRCHTc",
+    authDomain: "ozel-wp-klon-messages.firebaseapp.com",
+    projectId: "ozel-wp-klon-messages",
+    storageBucket: "ozel-wp-klon-messages.firebasestorage.app",
+    messagingSenderId: "616184530815",
+    appId: "1:616184530815:web:f118cd203ecdd506d73c4a"
+};
 
-const firebaseAccounts = [
-  {
-    name: "Ana Sunucu (Hesap 1)",
-    apiKey: "AIzaSyB9zGumn_UR6DZnuKswrMie1SgCCCAagMw",
-    authDomain: "ozel-wp-klon.firebaseapp.com",
-    projectId: "ozel-wp-klon",
-    storageBucket: "ozel-wp-klon.firebasestorage.app",
-    messagingSenderId: "544437866212",
-    appId: "1:544437866212:web:9766c694b0c849b37b26f1"
-  },
-  {
-    name: "Yedek Sunucu (Hesap 2)",
-    apiKey: "AIzaSyA2HypIsEsybnYBTaEGZr_uNdn-2kO60Cw",
-    authDomain: "ozel-wp-klon0.firebaseapp.com",
-    projectId: "ozel-wp-klon0",
-    storageBucket: "ozel-wp-klon0.firebasestorage.app",
-    messagingSenderId: "9575430594",
-    appId: "1:9575430594:web:d651b89509c9437444be5b"
-  },
-  {
-    name: "Yedek Sunucu 2 (Hesap 3)",
-    apiKey: "AIzaSyB4n4hp8RD39NL5rE3OnCc02ygChkIkYhQ",
-    authDomain: "ozel-wp-klon1.firebaseapp.com",
-    projectId: "ozel-wp-klon1",
-    storageBucket: "ozel-wp-klon1.firebasestorage.app",
-    messagingSenderId: "467098321527",
-    appId: "1:467098321527:web:8a93a16751a967e9757c72"
-  },
-  // 👇 İŞTE YENİ EKLEDİĞİMİZ 4. HESAP TAM OLARAK BURADA
-  {
-    name: "Yedek Sunucu 3 (Hesap 4)",
-    apiKey: "AIzaSyDmy-5wq9FvzORSAy3IJCtwcIYmy0nbkWM",
-    authDomain: "ozel-wp-klon2.firebaseapp.com",
-    projectId: "ozel-wp-klon2",
-    storageBucket: "ozel-wp-klon2.firebasestorage.app",
-    messagingSenderId: "784124577504",
-    appId: "1:784124577504:web:837c7a181e972bf3bab285"
-  }
+const mainApp = initializeApp(mainMsgConfig, "MainMessageApp");
+export const db = getFirestore(mainApp); // app.js sadece bu 'db' üzerinden mesajları işler
+
+// ==========================================
+// 💓 2. HEARTBEAT SUNUCULARI (1, 2, 3 ve 4. Sunucular - Yalnızca Çevrimiçi/Presence İçin)
+// ==========================================
+const heartbeatConfigs = [
+    {
+        name: "Heartbeat Sunucu 1",
+        apiKey: "AIzaSyB9zGumn_UR6DZnuKswrMie1SgCCCAagMw",
+        authDomain: "ozel-wp-klon.firebaseapp.com",
+        projectId: "ozel-wp-klon",
+        storageBucket: "ozel-wp-klon.firebasestorage.app",
+        messagingSenderId: "544437866212",
+        appId: "1:544437866212:web:9766c694b0c849b37b26f1"
+    },
+    {
+        name: "Heartbeat Sunucu 2",
+        apiKey: "AIzaSyA2HypIsEsybnYBTaEGZr_uNdn-2kO60Cw",
+        authDomain: "ozel-wp-klon0.firebaseapp.com",
+        projectId: "ozel-wp-klon0",
+        storageBucket: "ozel-wp-klon0.firebasestorage.app",
+        messagingSenderId: "9575430594",
+        appId: "1:9575430594:web:d651b89509c9437444be5b"
+    },
+    {
+        name: "Heartbeat Sunucu 3",
+        apiKey: "AIzaSyB4n4hp8RD39NL5rE3OnCc02ygChkIkYhQ",
+        authDomain: "ozel-wp-klon1.firebaseapp.com",
+        projectId: "ozel-wp-klon1",
+        storageBucket: "ozel-wp-klon1.firebasestorage.app",
+        messagingSenderId: "467098321527",
+        appId: "1:467098321527:web:8a93a16751a967e9757c72"
+    },
+    {
+        name: "Heartbeat Sunucu 4",
+        apiKey: "AIzaSyDmy-5wq9FvzORSAy3IJCtwcIYmy0nbkWM",
+        authDomain: "ozel-wp-klon2.firebaseapp.com",
+        projectId: "ozel-wp-klon2",
+        storageBucket: "ozel-wp-klon2.firebasestorage.app",
+        messagingSenderId: "784124577504",
+        appId: "1:784124577504:web:837c7a181e972bf3bab285"
+    }
 ];
 
-export let db;
-let currentApp;
+// Heartbeat istemcilerini ve veritabanlarını başlat
+const hbApps = heartbeatConfigs.map((cfg, index) => initializeApp(cfg, `HeartbeatApp_${index}`));
+const hbDatabases = hbApps.map(app => getFirestore(app));
 
-let currentAccountIndex = (MANUEL_DEPO_SECIMI >= 1 && MANUEL_DEPO_SECIMI <= firebaseAccounts.length) 
-    ? MANUEL_DEPO_SECIMI - 1 
-    : 0;
+let currentHbIndex = 0;
 
-function connectToFirebase(config) {
-    console.log(`📡 ${config.name} sunucusuna bağlanılıyor...`);
-    currentApp = initializeApp(config, config.projectId); 
-    db = getFirestore(currentApp);
-}
-
-// Seçilen sunucuyla sistemi başlat
-connectToFirebase(firebaseAccounts[currentAccountIndex]);
-
-// Kota dolduğunda sırayla kaydıran otomatik vites fonksiyonu
-export function switchDatabaseAccount() {
-    currentAccountIndex++;
-
-    // Eğer 4. hesap da dolarsa otomatik olarak en baştaki 1. hesaba geri döner
-    if (currentAccountIndex >= firebaseAccounts.length) {
-        console.error("❌ Tüm yedek depoların kotası tükendi! Başka hesap kalmadı.");
-        currentAccountIndex = 0; 
-    }
-
-    const nextConfig = firebaseAccounts[currentAccountIndex];
-    console.warn(`⚠️ Kotanın dolduğu algılandı! Otomatik geçiş yapılan depo: ${nextConfig.name}`);
+/**
+ * Otomatik vitesli Heartbeat fonksiyonu:
+ * Presence verisini sıradaki sunucuya yazar. Hata/kota alması durumunda milisaniyeler içinde bir sonraki sunucuya geçer.
+ */
+export async function sendHeartbeat(userId, isOnlineStatus) {
+    let attempts = 0;
     
-    connectToFirebase(nextConfig);
+    while (attempts < hbDatabases.length) {
+        const activeHbDb = hbDatabases[currentHbIndex];
+        try {
+            await setDoc(doc(activeHbDb, "presence", userId), {
+                isOnline: isOnlineStatus,
+                lastActive: Date.now()
+            }, { merge: true });
+            
+            return; // Başarılı yazımda fonksiyondan çık
+        } catch (error) {
+            console.warn(`⚠️ ${heartbeatConfigs[currentHbIndex].name} kotası doldu/yanıt vermedi. Otomatik geçiş yapılıyor...`);
+            currentHbIndex = (currentHbIndex + 1) % hbDatabases.length;
+            attempts++;
+        }
+    }
+    console.error("❌ Tüm Heartbeat sunucularının kotası tükenmiş veya erişilemiyor!");
 }
