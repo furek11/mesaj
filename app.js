@@ -457,7 +457,7 @@ if (voiceCancelBtn) {
 async function uploadMediaWithProgress(file, type) {
     let docRef = null;
     try {
-        if (currentUser) await updateDoc(doc(db, "presence", getDocId(currentUser)), { isTyping: false });
+        if (currentUser) await forceSendPing(true);
 
         docRef = await addDoc(collection(db, "messages"), {
             sender: currentUser, receiver: chatPartner,
