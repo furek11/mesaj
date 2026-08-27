@@ -644,10 +644,18 @@ window.selectUser = function(user) {
 let presenceUnsubscribe = null;
 
 function listenPartnerPresence() {
-    if (presenceUnsubscribe) presenceUnsubscribe();
+    // 1. ÖNEMLİ: Eski sunucuya bağlı dinleyiciyi KESİNLİKLE kapatıyoruz
+    if (presenceUnsubscribe) {
+        try {
+            presenceUnsubscribe(); 
+        } catch(e) {}
+        presenceUnsubscribe = null;
+    }
 
+    // 2. Çalışan güncel veritabanını alıyoruz
     const currentDb = getActiveHbDb();
 
+    // 3. Dinleyiciyi başlatıyoruz
     presenceUnsubscribe = onSnapshot(doc(currentDb, "presence", getDocId(chatPartner)), (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data();
@@ -674,13 +682,15 @@ function listenPartnerPresence() {
             }
         }
     }, (error) => {
-        // Dinleyici taraflı bir Quota Exceeded / Network hatası alındığında:
-        console.warn("Dinleyici kota hatası aldı, sunucu değiştiriliyor...", error);
+        // Dinleyici 1. sunucuda kota hatası aldığı an eski dinleyiciyi öldürüp 2. sunucuya geçer
+        console.warn("Dinleyici kota hatası aldı! Eski dinleyici kapatılıp 2. sunucuya geçiliyor...", error);
+        
         switchNextServer();
-        // Yeniden dinleme başlat
+        
+        // 2. sunucudan dinlemeyi tekrar başlat
         setTimeout(() => {
             listenPartnerPresence();
-        }, 500);
+        }, 300);
     });
 }
 
