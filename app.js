@@ -1,5 +1,4 @@
 import { db, sendHeartbeat, hbDatabases, getActiveHbDb } from "./firebase-config.js";
-import { db, sendHeartbeat, hbDatabases } from "./firebase-config.js";
 import { 
     collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, 
     doc, setDoc, updateDoc, limitToLast
