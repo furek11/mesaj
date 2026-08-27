@@ -646,6 +646,7 @@ let presenceUnsubscribe = null;
 function listenPartnerPresence() {
     if (presenceUnsubscribe) presenceUnsubscribe();
 
+    // O an aktif/sağlam olan Heartbeat sunucusunu alır
     const currentDb = getActiveHbDb();
 
     presenceUnsubscribe = onSnapshot(doc(currentDb, "presence", getDocId(chatPartner)), (docSnap) => {
@@ -674,8 +675,9 @@ function listenPartnerPresence() {
             }
         }
     }, (error) => {
-        // Kota hatası (resource-exhausted) alındığı an otomatik 2. sunucuya geç ve dinlemeyi tekrar başlat
-        console.warn("Mevcut Heartbeat sunucusu kotası doldu, sıradaki sunucuya geçiliyor...");
+        // Kota bittiğinde (resource-exhausted) otomatik olarak 2. sunucuya sıçrar
+        console.warn("Mevcut Heartbeat sunucusunun kotası doldu. Otomatik sonraki sunucuya geçiliyor...", error);
+        
         forceSendPing(true).then(() => {
             listenPartnerPresence();
         });
