@@ -14,7 +14,7 @@ const mainMsgConfig = {
 };
 
 const mainApp = initializeApp(mainMsgConfig, "MainMessageApp");
-export const db = getFirestore(mainApp); // app.js sadece bu 'db' üzerinden mesajları işler
+export const db = getFirestore(mainApp);
 
 // ==========================================
 // 💓 2. HEARTBEAT SUNUCULARI (1, 2, 3 ve 4. Sunucular - Yalnızca Çevrimiçi/Presence İçin)
@@ -58,16 +58,15 @@ const heartbeatConfigs = [
     }
 ];
 
-// Heartbeat istemcilerini ve veritabanlarını başlat
 const hbApps = heartbeatConfigs.map((cfg, index) => initializeApp(cfg, `HeartbeatApp_${index}`));
 export const hbDatabases = hbApps.map(app => getFirestore(app));
 
-let currentHbIndex = 0;
+export let currentHbIndex = 0;
 
-/**
- * Otomatik vitesli Heartbeat fonksiyonu:
- * Presence verisini sıradaki sunucuya yazar. Hata/kota alması durumunda milisaniyeler içinde bir sonraki sunucuya geçer.
- */
+export function getActiveHbDb() {
+    return hbDatabases[currentHbIndex];
+}
+
 export async function sendHeartbeat(userId, isOnlineStatus) {
     let attempts = 0;
     
@@ -79,12 +78,11 @@ export async function sendHeartbeat(userId, isOnlineStatus) {
                 lastActive: Date.now()
             }, { merge: true });
             
-            return; // Başarılı yazımda fonksiyondan çık
+            return; 
         } catch (error) {
-            console.warn(`⚠️ ${heartbeatConfigs[currentHbIndex].name} kotası doldu/yanıt vermedi. Otomatik geçiş yapılıyor...`);
+            console.warn(`⚠️ Sunucu ${currentHbIndex + 1} kotası doldu. Otomatik ${currentHbIndex + 2}. sunucuya geçiliyor...`);
             currentHbIndex = (currentHbIndex + 1) % hbDatabases.length;
             attempts++;
         }
     }
-    console.error("❌ Tüm Heartbeat sunucularının kotası tükenmiş veya erişilemiyor!");
 }

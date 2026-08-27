@@ -645,9 +645,14 @@ window.selectUser = function(user) {
     setupScrollTracking();
 };
 
+let presenceUnsubscribe = null;
+
 function listenPartnerPresence() {
-    // Çevrimiçi bilgisini dinlemek için ilk Heartbeat sunucusundan (hbDatabases[0]) okuyoruz.
-    let unsub = onSnapshot(doc(hbDatabases[0], "presence", getDocId(chatPartner)), (docSnap) => {
+    if (presenceUnsubscribe) presenceUnsubscribe();
+
+    const currentDb = getActiveHbDb();
+
+    presenceUnsubscribe = onSnapshot(doc(currentDb, "presence", getDocId(chatPartner)), (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data();
             const now = Date.now();
@@ -671,13 +676,13 @@ function listenPartnerPresence() {
                 if(partnerStatusHeader) partnerStatusHeader.textContent = lastSeenText;
                 if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-gray-400 rounded-full";
             }
-
-            if (lastSnapshotCache && messagesContainer) {
-                renderMessagesHTML(lastSnapshotCache);
-            }
         }
     }, (error) => {
-        console.error("Presence Dinleme Hatası:", error);
+        // Kota hatası (resource-exhausted) alındığı an otomatik 2. sunucuya geç ve dinlemeyi tekrar başlat
+        console.warn("Mevcut Heartbeat sunucusu kotası doldu, sıradaki sunucuya geçiliyor...");
+        forceSendPing(true).then(() => {
+            listenPartnerPresence();
+        });
     });
 }
 
