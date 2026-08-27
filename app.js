@@ -1,4 +1,4 @@
-import { db, sendHeartbeat, hbDatabases, getActiveHbDb } from "./firebase-config.js";
+import { db, sendHeartbeat, hbDatabases, getActiveHbDb, switchNextServer } from "./firebase-config.js";
 import { 
     collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, 
     doc, setDoc, updateDoc, limitToLast
@@ -646,7 +646,6 @@ let presenceUnsubscribe = null;
 function listenPartnerPresence() {
     if (presenceUnsubscribe) presenceUnsubscribe();
 
-    // O an aktif/sağlam olan Heartbeat sunucusunu alır
     const currentDb = getActiveHbDb();
 
     presenceUnsubscribe = onSnapshot(doc(currentDb, "presence", getDocId(chatPartner)), (docSnap) => {
@@ -675,12 +674,13 @@ function listenPartnerPresence() {
             }
         }
     }, (error) => {
-        // Kota bittiğinde (resource-exhausted) otomatik olarak 2. sunucuya sıçrar
-        console.warn("Mevcut Heartbeat sunucusunun kotası doldu. Otomatik sonraki sunucuya geçiliyor...", error);
-        
-        forceSendPing(true).then(() => {
+        // Dinleyici taraflı bir Quota Exceeded / Network hatası alındığında:
+        console.warn("Dinleyici kota hatası aldı, sunucu değiştiriliyor...", error);
+        switchNextServer();
+        // Yeniden dinleme başlat
+        setTimeout(() => {
             listenPartnerPresence();
-        });
+        }, 500);
     });
 }
 
