@@ -72,15 +72,23 @@ export async function sendHeartbeat(userId, isOnlineStatus) {
     
     while (attempts < hbDatabases.length) {
         const activeHbDb = hbDatabases[currentHbIndex];
+        
         try {
-            await setDoc(doc(activeHbDb, "presence", userId), {
+            // Kotası dolan sunucunun Firebase arkasında sonsuz bekletmesini engellemek için 2s Timeout
+            const heartbeatPromise = setDoc(doc(activeHbDb, "presence", userId), {
                 isOnline: isOnlineStatus,
                 lastActive: Date.now()
             }, { merge: true });
-            
+
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error("Heartbeat_Timeout")), 2000)
+            );
+
+            await Promise.race([heartbeatPromise, timeoutPromise]);
             return; 
+
         } catch (error) {
-            console.warn(`⚠️ Sunucu ${currentHbIndex + 1} kotası doldu. Otomatik ${currentHbIndex + 2}. sunucuya geçiliyor...`);
+            console.warn(`⚠️ Sunucu ${currentHbIndex + 1} yanıt vermedi/kotası doldu. Otomatik ${currentHbIndex + 2}. sunucuya geçiliyor...`);
             currentHbIndex = (currentHbIndex + 1) % hbDatabases.length;
             attempts++;
         }
