@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, terminate } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // ==========================================
 // 📩 1. MESAJ SUNUCUSU (5. Sunucu - Yalnızca Mesajlar İçin)
@@ -17,7 +17,7 @@ const mainApp = initializeApp(mainMsgConfig, "MainMessageApp");
 export const db = getFirestore(mainApp);
 
 // ==========================================
-// 💓 2. HEARTBEAT SUNUCULARI (1, 2, 3 ve 4. Sunucular - Yalnızca Çevrimiçi/Presence İçin)
+// 💓 2. HEARTBEAT SUNUCULARI (1, 2, 3 ve 4. Sunucular)
 // ==========================================
 const heartbeatConfigs = [
     {
@@ -61,6 +61,8 @@ const heartbeatConfigs = [
 const hbApps = heartbeatConfigs.map((cfg, index) => initializeApp(cfg, `HeartbeatApp_${index}`));
 export const hbDatabases = hbApps.map(app => getFirestore(app));
 
+// Kotası dolan sunucuları hafızada tutuyoruz
+const failedServers = new Set();
 export let currentHbIndex = 0;
 
 export function getActiveHbDb() {
@@ -71,26 +73,33 @@ export async function sendHeartbeat(userId, isOnlineStatus) {
     let attempts = 0;
     
     while (attempts < hbDatabases.length) {
+        // Eğer mevcut sunucu önceden patlamışsa direkt sonrakine atla
+        if (failedServers.has(currentHbIndex)) {
+            currentHbIndex = (currentHbIndex + 1) % hbDatabases.length;
+            attempts++;
+            continue;
+        }
+
         const activeHbDb = hbDatabases[currentHbIndex];
         
         try {
-            // Kotası dolan sunucunun Firebase arkasında sonsuz bekletmesini engellemek için 2s Timeout
-            const heartbeatPromise = setDoc(doc(activeHbDb, "presence", userId), {
+            await setDoc(doc(activeHbDb, "presence", userId), {
                 isOnline: isOnlineStatus,
                 lastActive: Date.now()
             }, { merge: true });
-
-            const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error("Heartbeat_Timeout")), 2000)
-            );
-
-            await Promise.race([heartbeatPromise, timeoutPromise]);
-            return; 
-
+            
+            return; // Başarılıysa çık
         } catch (error) {
-            console.warn(`⚠️ Sunucu ${currentHbIndex + 1} yanıt vermedi/kotası doldu. Otomatik ${currentHbIndex + 2}. sunucuya geçiliyor...`);
+            console.warn(`⚠️ Sunucu ${currentHbIndex + 1} kotası doldu. Bu sunucu kapatılıyor ve 2. sunucuya geçiliyor...`);
+            
+            // Kotası dolan sunucunun Firebase bağlantısını tamamen sonlandır
+            failedServers.add(currentHbIndex);
+            try { await terminate(activeHbDb); } catch(e) {}
+            
             currentHbIndex = (currentHbIndex + 1) % hbDatabases.length;
             attempts++;
         }
     }
+    
+    console.error("❌ Tüm Heartbeat sunucularının kotası tükenmiş!");
 }
