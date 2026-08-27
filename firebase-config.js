@@ -65,7 +65,6 @@ export const failedServers = new Set();
 export let currentHbIndex = 0;
 
 export function getActiveHbDb() {
-    // Çalışmayan sunucuları atlayıp ilk çalışan sunucunun veritabanını döndürür
     while (failedServers.has(currentHbIndex) && failedServers.size < hbDatabases.length) {
         currentHbIndex = (currentHbIndex + 1) % hbDatabases.length;
     }
@@ -75,7 +74,7 @@ export function getActiveHbDb() {
 export function switchNextServer() {
     failedServers.add(currentHbIndex);
     currentHbIndex = (currentHbIndex + 1) % hbDatabases.length;
-    console.warn(`⚠️ Sunucu ${currentHbIndex} aktif edildi. İptal edilen sunucular:`, Array.from(failedServers));
+    console.warn(`⚠️ Sunucu ${currentHbIndex + 1} aktif edildi. İptal edilen sunucular:`, Array.from(failedServers));
 }
 
 export async function sendHeartbeat(userId, isOnlineStatus) {
