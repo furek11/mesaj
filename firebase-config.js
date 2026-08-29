@@ -2,7 +2,16 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebas
 import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // ==========================================
-// 📩 1. MESAJ SUNUCUSU (5. Sunucu)
+// ⚙️ AKTİF SUNUCU SEÇİMİ (Manuel)
+// 0 = Heartbeat Sunucu 1
+// 1 = Heartbeat Sunucu 2
+// 2 = Heartbeat Sunucu 3
+// 3 = Heartbeat Sunucu 4
+// ==========================================
+export const ACTIVE_SERVER_INDEX = 0;
+
+// ==========================================
+// 📩 1. MESAJ SUNUCUSU (5. Sunucu - Yalnızca Mesajlar İçin)
 // ==========================================
 const mainMsgConfig = {
     apiKey: "AIzaSyAEgExqzkDtW_YoIrsaCOuzdsivYrRCHTc",
@@ -17,7 +26,7 @@ const mainApp = initializeApp(mainMsgConfig, "MainMessageApp");
 export const db = getFirestore(mainApp);
 
 // ==========================================
-// 💓 2. HEARTBEAT SUNUCULARI (1, 2, 3 ve 4. Sunucular)
+// 💓 2. HEARTBEAT SUNUCULARI (Presence / Çevrimiçi İçin)
 // ==========================================
 const heartbeatConfigs = [
     {
@@ -58,55 +67,17 @@ const heartbeatConfigs = [
     }
 ];
 
-const hbApps = heartbeatConfigs.map((cfg, index) => initializeApp(cfg, `HeartbeatApp_${index}`));
-export const hbDatabases = hbApps.map(app => getFirestore(app));
-
-export const failedServers = new Set();
-export let currentHbIndex = 0;
-
-export function getActiveHbDb() {
-    while (failedServers.has(currentHbIndex) && failedServers.size < hbDatabases.length) {
-        currentHbIndex = (currentHbIndex + 1) % hbDatabases.length;
-    }
-    return hbDatabases[currentHbIndex];
-}
-
-export function switchNextServer() {
-    failedServers.add(currentHbIndex);
-    currentHbIndex = (currentHbIndex + 1) % hbDatabases.length;
-    console.warn(`⚠️ Sunucu ${currentHbIndex + 1} aktif edildi. İptal edilen sunucular:`, Array.from(failedServers));
-}
+// Yalnızca seçili sunucuyu başlatıyoruz
+const activeApp = initializeApp(heartbeatConfigs[ACTIVE_SERVER_INDEX], `HeartbeatApp_${ACTIVE_SERVER_INDEX}`);
+export const activeHbDb = getFirestore(activeApp);
 
 export async function sendHeartbeat(userId, isOnlineStatus) {
-    let attempts = 0;
-    
-    while (attempts < hbDatabases.length) {
-        if (failedServers.has(currentHbIndex)) {
-            currentHbIndex = (currentHbIndex + 1) % hbDatabases.length;
-            attempts++;
-            continue;
-        }
-
-        const activeHbDb = hbDatabases[currentHbIndex];
-        
-        try {
-            // SDK'nın beklemede kalmasını engellemek için 1.5 saniyelik sert zaman aşımı koyuyoruz
-            const writePromise = setDoc(doc(activeHbDb, "presence", userId), {
-                isOnline: isOnlineStatus,
-                lastActive: Date.now()
-            }, { merge: true });
-
-            const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error("SERVER_TIMEOUT")), 1500)
-            );
-
-            await Promise.race([writePromise, timeoutPromise]);
-            return; // Başarılıysa tamamla
-
-        } catch (error) {
-            console.warn(`⚠️ Sunucu ${currentHbIndex + 1} yanıt vermedi (Kota/Timeout). Sonraki sunucuya geçiliyor...`);
-            switchNextServer();
-            attempts++;
-        }
+    try {
+        await setDoc(doc(activeHbDb, "presence", userId), {
+            isOnline: isOnlineStatus,
+            lastActive: Date.now()
+        }, { merge: true });
+    } catch (error) {
+        console.error("Heartbeat gönderilemedi:", error);
     }
 }

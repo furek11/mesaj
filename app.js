@@ -1,4 +1,4 @@
-import { db, sendHeartbeat, hbDatabases, getActiveHbDb, switchNextServer } from "./firebase-config.js";
+import { db, sendHeartbeat, activeHbDb } from "./firebase-config.js";
 import { 
     collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, 
     doc, setDoc, updateDoc, limitToLast
@@ -644,19 +644,9 @@ window.selectUser = function(user) {
 let presenceUnsubscribe = null;
 
 function listenPartnerPresence() {
-    // 1. ÖNEMLİ: Eski sunucuya bağlı dinleyiciyi KESİNLİKLE kapatıyoruz
-    if (presenceUnsubscribe) {
-        try {
-            presenceUnsubscribe(); 
-        } catch(e) {}
-        presenceUnsubscribe = null;
-    }
+    if (presenceUnsubscribe) presenceUnsubscribe();
 
-    // 2. Çalışan güncel veritabanını alıyoruz
-    const currentDb = getActiveHbDb();
-
-    // 3. Dinleyiciyi başlatıyoruz
-    presenceUnsubscribe = onSnapshot(doc(currentDb, "presence", getDocId(chatPartner)), (docSnap) => {
+    presenceUnsubscribe = onSnapshot(doc(activeHbDb, "presence", getDocId(chatPartner)), (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data();
             const now = Date.now();
@@ -681,16 +671,6 @@ function listenPartnerPresence() {
                 if(statusIndicatorDot) statusIndicatorDot.className = "w-3 h-3 bg-gray-400 rounded-full";
             }
         }
-    }, (error) => {
-        // Dinleyici 1. sunucuda kota hatası aldığı an eski dinleyiciyi öldürüp 2. sunucuya geçer
-        console.warn("Dinleyici kota hatası aldı! Eski dinleyici kapatılıp 2. sunucuya geçiliyor...", error);
-        
-        switchNextServer();
-        
-        // 2. sunucudan dinlemeyi tekrar başlat
-        setTimeout(() => {
-            listenPartnerPresence();
-        }, 300);
     });
 }
 
