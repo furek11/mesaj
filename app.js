@@ -31,6 +31,7 @@ let isPartnerOnline = false;
 let partnerLastActive = 0; 
 let heartbeatInterval = null;
 let messagesUnsubscribe = null; 
+let presenceUnsubscribe = null;
 let lastSnapshotCache = null; 
 
 // Ses Kayıt Değişkenleri
@@ -132,7 +133,6 @@ function openProfileCard() {
     document.getElementById("profile-card-modal").classList.remove("hidden");
 }
 
-// Header başlığına veya avatarına tıklandığında profil kartını aç
 const chatHeaderTitleArea = document.getElementById("chat-header-partner-name")?.parentElement;
 if (chatHeaderTitleArea) {
     chatHeaderTitleArea.classList.add("cursor-pointer");
@@ -313,7 +313,7 @@ function formatSmartDate(timestampMs) {
     if (isToday) return "Bugün";
     if (isYesterday) return "Dün";
 
-    const months = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylul", "Ekim", "Kasım", "Aralık"];
+    const months = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
     return `${messageDate.getDate()} ${months[messageDate.getMonth()]} ${messageDate.getFullYear()}`;
 }
 
@@ -349,7 +349,7 @@ async function sendEmailNotification(messageText, contentType = "metin") {
 
 function getDocId(name) { return name.replace(/\s+/g, '_'); }
 
-// 🔄 YENİ AKILLI PING SİSTEMİ (firebase-config.js üzerinden otomatik sunucu değişimi yapar)
+// 🔄 MANUEL SUNUCU SEÇİMLİ PING SİSTEMİ
 async function forceSendPing(isOnlineStatus) {
     if (!currentUser) return;
     try {
@@ -505,7 +505,6 @@ async function uploadMediaWithProgress(file, type) {
 
 async function sendCustomMessage(payload, type = "text") {
     try {
-        // 5. sunucudaki presence/updateDoc çağrısını kaldırdık (Hatayı veren kısım burasıydı)
         await addDoc(collection(db, "messages"), {
             sender: currentUser, 
             receiver: chatPartner,
@@ -517,7 +516,6 @@ async function sendCustomMessage(payload, type = "text") {
             localCreatedAt: Date.now() 
         });
         
-        // Heartbeat sinyalini arka planda günceller
         forceSendPing(true);
         sendEmailNotification(payload, "metin");
     } catch (e) { 
@@ -585,16 +583,13 @@ window.selectUser = function(user) {
     if(chatPartnerNameEl) chatPartnerNameEl.textContent = chatPartner;
     if(chatHeaderPartnerNameEl) chatHeaderPartnerNameEl.textContent = chatPartner;
 
-    // 🛠️ PROFİL RESMİNİ SOHBET ÜST BARINA (HEADER) VE SİDEBAR'A AKTARMA
     const partnerAvatarUrl = PROFILE_AVATARS[chatPartner] || "";
     
-    // Sidebar profil resmi
     if(avatarPlaceholder) {
         avatarPlaceholder.innerHTML = `<img src="${partnerAvatarUrl}" class="w-full h-full object-cover rounded-full cursor-pointer">`;
         avatarPlaceholder.onclick = openProfileCard;
     }
 
-    // Sohbet Üst Barı (Header) Profil Resmi
     const headerAvatarEl = document.getElementById("chat-header-avatar");
     if (headerAvatarEl) {
         headerAvatarEl.src = partnerAvatarUrl;
@@ -641,8 +636,7 @@ window.selectUser = function(user) {
     setupScrollTracking();
 };
 
-let presenceUnsubscribe = null;
-
+// 💓 DÜZELTİLMİŞ PRESENCE (ÇEVRİMİÇİ / YAZIYOR) DİNLENMESİ
 function listenPartnerPresence() {
     if (presenceUnsubscribe) presenceUnsubscribe();
 
@@ -674,19 +668,32 @@ function listenPartnerPresence() {
     });
 }
 
+// ✍️ DÜZELTİLMİŞ "YAZIYOR..." BİLGİSİ GÖNDERİMİ
 function setupTypingListener() {
     if (!messageInput) return;
+    
     messageInput.addEventListener("input", async () => {
         if (!currentUser) return;
         try {
-            await setDoc(doc(hbDatabases[0], "presence", getDocId(currentUser)), { isTyping: true }, { merge: true });
+            await setDoc(doc(activeHbDb, "presence", getDocId(currentUser)), { 
+                isTyping: true,
+                isOnline: true,
+                lastActive: Date.now()
+            }, { merge: true });
+
             clearTimeout(typingTimeout);
             typingTimeout = setTimeout(async () => {
                 try { 
-                    await setDoc(doc(hbDatabases[0], "presence", getDocId(currentUser)), { isTyping: false }, { merge: true }); 
+                    await setDoc(doc(activeHbDb, "presence", getDocId(currentUser)), { 
+                        isTyping: false,
+                        isOnline: true,
+                        lastActive: Date.now()
+                    }, { merge: true }); 
                 } catch(e) {}
-            }, 1500);
-        } catch(e) {}
+            }, 2000);
+        } catch(e) {
+            console.error("Typing yazılırken hata oluştu:", e);
+        }
     });
 }
 
